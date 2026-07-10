@@ -89,6 +89,15 @@ neon-strike/
 
 Edit `js/levels.js` and append another object to the `LEVELS` array (platforms, enemies, pickups, boss). The game auto-advances until no next level exists, then shows victory.
 
+## Pseudo-3D (optional)
+
+Extruded platforms, perspective ground grid, contact shadows, and a slight CSS stage tilt.
+
+- Toggle in-game with the **3D ON/OFF** button (footer)
+- Force flat: open with `?flat=1` or set localStorage `neon-strike-3d=0`
+- Disable in code: `ENABLE_3D = false` in `js/fx3d.js`
+- Full revert: `git revert` the commit that added `js/fx3d.js`
+
 ## Stack
 
 - Vanilla JS (ES modules)

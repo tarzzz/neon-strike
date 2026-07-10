@@ -1,5 +1,6 @@
 import { initInput } from "./input.js";
 import { Game } from "./game.js";
+import { init3DPreference, set3DEnabled, sync3DClass, ENABLE_3D } from "./fx3d.js";
 
 const canvas = document.getElementById("game");
 const ui = {
@@ -39,6 +40,7 @@ const ui = {
   btnLoad: document.getElementById("btn-load"),
   saveSummary: document.getElementById("save-summary"),
   pauseSaveMsg: document.getElementById("pause-save-msg"),
+  btn3d: document.getElementById("btn-3d"),
 };
 
 // Logical resolution stays fixed for consistent gameplay;
@@ -58,8 +60,17 @@ function fitCanvas() {
 fitCanvas();
 window.addEventListener("resize", fitCanvas);
 
+init3DPreference();
+sync3DClass();
+if (ui.btn3d) ui.btn3d.textContent = ENABLE_3D ? "3D ON" : "3D OFF";
+
 initInput(canvas);
 const game = new Game(canvas, ui);
+
+ui.btn3d?.addEventListener("click", () => {
+  const on = set3DEnabled(!ENABLE_3D);
+  ui.btn3d.textContent = on ? "3D ON" : "3D OFF";
+});
 
 // Browser fullscreen (F or button)
 function toggleFullscreen() {

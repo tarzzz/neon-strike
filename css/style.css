@@ -402,3 +402,58 @@ html, body {
   color: var(--cyan);
   margin-bottom: 4px;
 }
+
+
+/* ── Optional pseudo-3D presentation (js/fx3d.js) ── */
+html.fx3d #app {
+  perspective: 1400px;
+  perspective-origin: 50% 40%;
+}
+
+html.fx3d #stage {
+  transform: rotateX(4deg) translateZ(0);
+  transform-style: preserve-3d;
+  box-shadow:
+    0 25px 50px rgba(20, 40, 70, 0.35),
+    0 8px 16px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.25);
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+}
+
+html.fx3d #stage:hover {
+  transform: rotateX(2.5deg) translateY(-2px);
+}
+
+html.fx3d #top-bar {
+  transform: translateZ(40px);
+}
+
+html.fx3d #footer {
+  transform: translateZ(20px);
+}
+
+html.fx3d-off #stage {
+  transform: none;
+  box-shadow: none;
+}
+
+#btn-3d {
+  font-family: Orbitron, sans-serif;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: rgba(0, 20, 40, 0.65);
+  color: var(--cyan);
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+#btn-3d:hover {
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.35);
+}
+
+html.fx3d #btn-3d {
+  border-color: var(--magenta);
+  color: var(--magenta);
+}

@@ -3,6 +3,13 @@ import { isDown, justPressed, justPressedKey, isFiring, isAnyFire, getFireAim, a
 import { sfx, unlockAudio } from "./audio.js";
 import { ParticleSystem } from "./particles.js";
 import { getLevel } from "./levels.js";
+import {
+  ENABLE_3D,
+  drawExtrusion,
+  drawPerspectiveGround,
+  drawContactBlob,
+  extrusionColorsForStyle,
+} from "./fx3d.js";
 import { hasSave, readRaw, writeSave, clearSave, formatSaveSummary } from "./save.js";
 import {
   drawPlayerLive,
@@ -1950,11 +1957,33 @@ export class Game {
   drawWorld(ctx) {
     const cam = this.cam;
 
-    // platforms
+    // perspective ground grid (pseudo-3D)
+    drawPerspectiveGround(ctx, W, H, cam.x, this.level.theme || this.level.bg?.scenery || "urban");
+
+    // platforms (+ optional extrusion)
     for (const p of this.level.platforms) {
       const sx = p.x - cam.x;
       const sy = p.y - cam.y;
-      if (sx + p.w < -20 || sx > W + 20) continue;
+      if (sx + p.w < -40 || sx > W + 40) continue;
+      if (ENABLE_3D && !p.oneWay) {
+        const cols = extrusionColorsForStyle(p.style || "metal");
+        drawExtrusion(ctx, sx, sy, p.w, p.h, {
+          topColor: cols.top,
+          sideColor: cols.side,
+          frontColor: cols.front,
+          dx: p.hazard ? 6 : 11,
+          dy: p.hazard ? 4 : 8,
+        });
+      } else if (ENABLE_3D && p.oneWay) {
+        const cols = extrusionColorsForStyle(p.style || "neon");
+        drawExtrusion(ctx, sx, sy, p.w, p.h, {
+          topColor: cols.top,
+          sideColor: cols.side,
+          frontColor: cols.front,
+          dx: 7,
+          dy: 5,
+        });
+      }
       drawPlatformLive(ctx, sx, sy, p.w, p.h, p);
     }
 
@@ -1973,6 +2002,7 @@ export class Game {
       const sx = e.x - cam.x;
       const sy = e.y - cam.y;
       if (sx < -60 || sx > W + 60) continue;
+      drawContactBlob(ctx, sx, sy, e.w, e.h, e.type === "heavy" ? 1.2 : 1);
       drawEnemyLive(ctx, sx, sy, e, this.time);
     }
 
@@ -1981,7 +2011,10 @@ export class Game {
       const b = this.boss;
       const sx = b.x - cam.x;
       const sy = b.y - cam.y;
-      if (b.alive) drawBossLive(ctx, sx, sy, b, this.time);
+      if (b.alive) {
+        drawContactBlob(ctx, sx, sy, b.w, b.h, 1.4);
+        drawBossLive(ctx, sx, sy, b, this.time);
+      }
     }
 
     // bullets
@@ -1995,6 +2028,7 @@ export class Game {
       const sy = p.y - cam.y;
       const blink = p.invuln > 0 && Math.floor(this.time * 20) % 2 === 0;
       if (!blink) {
+        drawContactBlob(ctx, sx, sy, p.w, p.h, 1.1);
         const wcol = WEAPONS[p.weapon]?.color || "#00f0ff";
         drawPlayerLive(ctx, sx, sy, p.w, p.h, p.facing, p.anim, p.animT, {
           recoil: p.recoil,
