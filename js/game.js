@@ -1,5 +1,5 @@
 import { clamp, lerp, rand, randInt, chance, rectsOverlap, padScore, resolvePlatforms } from "./utils.js";
-import { isDown, justPressed, justPressedKey, isFiring, anyKeyPressed, endFrameInput, consumeWheel } from "./input.js";
+import { isDown, justPressed, justPressedKey, isFiring, isAnyFire, getFireAim, anyKeyPressed, endFrameInput, consumeWheel } from "./input.js";
 import { sfx, unlockAudio } from "./audio.js";
 import { ParticleSystem } from "./particles.js";
 import { getLevel } from "./levels.js";
@@ -476,19 +476,24 @@ export class Game {
         p.vy = p.jumpV;
         p.onGround = false;
         p.jumps = 1;
+        p.flip = 0;
+        p.flipSpeed = (10 + Math.random() * 4) * p.facing; // somersault
+        p.fun = null;
         sfx.jump();
       } else if (p.jumps < p.maxJumps) {
         p.vy = p.jumpV * 0.92;
         p.jumps++;
+        // reverse or boost flip on double jump
+        p.flipSpeed = (12 + Math.random() * 5) * (Math.random() < 0.5 ? p.facing : -p.facing);
         sfx.jump();
         this.particles.emit(p.x + p.w / 2, p.y + p.h, {
-          count: 8,
-          colors: ["#00f0ff", "#fff"],
-          speed: 100,
-          life: 0.25,
+          count: 10,
+          colors: ["#00f0ff", "#fff", "#ff2bd6"],
+          speed: 120,
+          life: 0.28,
           gravity: 200,
           angle: Math.PI / 2,
-          spread: 1.2,
+          spread: 1.4,
         });
       }
     }
@@ -511,15 +516,24 @@ export class Game {
       this.hurtPlayer(99);
     }
 
-    // anim + explicit motion states
+    // anim + somersault + random fun poses
     p.animT += dt;
     if (p.recoil > 0) p.recoil = Math.max(0, p.recoil - dt);
     if (p.landSquash > 0) p.landSquash = Math.max(0, p.landSquash - dt * 2.5);
     if (p.muzzleFlash > 0) p.muzzleFlash = Math.max(0, p.muzzleFlash - dt);
 
-    // landing squash
+    // airborne flip integration
+    if (!p.onGround) {
+      p.flip = (p.flip || 0) + (p.flipSpeed || 0) * dt;
+      // slight drag so it doesn't spin forever on long falls
+      p.flipSpeed = (p.flipSpeed || 0) * (1 - dt * 0.15);
+    }
+
+    // landing squash + finish flip + random flourish
     if (p.onGround && !p.wasOnGround && p.vy >= 0) {
       p.landSquash = 1;
+      p.flip = 0;
+      p.flipSpeed = 0;
       this.particles.emit(p.x + p.w / 2, p.y + p.h, {
         count: 10,
         colors: ["#8899aa", "#00f0ff", "#fff"],
@@ -530,13 +544,46 @@ export class Game {
         spread: 1.4,
         kind: "smoke",
       });
+      // random land flair
+      if (Math.random() < 0.45) {
+        startFunAnim(p, pickFun(["kick", "flex", "celebrate", "spin", "point"]));
+      }
     }
     p.wasOnGround = p.onGround;
 
+    // fun anim timer
+    if (p.fun) {
+      p.funT += dt;
+      if (p.funT >= p.funDur) {
+        p.fun = null;
+        p.funT = 0;
+      }
+    }
+
+    // random idle / run flair
+    p.funCd = (p.funCd || 0) - dt;
+    if (p.onGround && !p.prone && !p.fun && p.funCd <= 0) {
+      if (Math.abs(p.vx) < 20 && Math.random() < 0.008) {
+        startFunAnim(p, pickFun(["wave", "look", "flex", "dance", "point", "celebrate"]));
+        p.funCd = 1.2 + Math.random() * 2;
+      } else if (Math.abs(p.vx) > 40 && Math.random() < 0.004) {
+        startFunAnim(p, pickFun(["spin", "point", "kick"]));
+        p.funCd = 2 + Math.random();
+      }
+    }
+
+    // base locomotion anim (fun overlays on top)
     if (p.prone) p.anim = Math.abs(p.vx) > 15 ? "crawl" : "prone";
-    else if (!p.onGround) p.anim = p.vy < 0 ? "jump" : "fall";
+    else if (!p.onGround) p.anim = "flip"; // somersault in air
+    else if (p.fun === "spin" || p.fun === "dance" || p.fun === "celebrate") p.anim = "idle";
     else if (Math.abs(p.vx) > 30) p.anim = "run";
     else p.anim = "idle";
+
+    // shooting cancels most fun poses (except mid-flip)
+    if (isAnyFire() && p.fun && p.fun !== "spin") {
+      p.fun = null;
+      p.funT = 0;
+    }
 
     // run dust / foot puffs
     if (p.anim === "run") {
@@ -570,8 +617,10 @@ export class Game {
     }
 
     const wep = WEAPONS[p.weapon] || WEAPONS.blaster;
-    if (isFiring() && p.fireCd <= 0 && canUseWeapon(p, p.weapon)) {
-      this.fireWeapon(p, wep);
+    // J/Z/click = forward · E = diagonal up · X = diagonal down
+    if (isAnyFire() && p.fireCd <= 0 && canUseWeapon(p, p.weapon)) {
+      const aimMode = getFireAim();
+      this.fireWeapon(p, wep, aimMode);
       p.fireCd = wep.rate;
       p.recoil = Math.min(0.18, 0.06 + (wep.rate > 0.3 ? 0.1 : 0.04));
       p.muzzleFlash = 0.06;
@@ -579,7 +628,6 @@ export class Game {
         p.ammo[p.weapon] = Math.max(0, (p.ammo[p.weapon] || 0) - 1);
         if ((p.ammo[p.weapon] || 0) <= 0) {
           this.floatText(p.x, p.y - 30, "EMPTY", "#ff3b5c");
-          // stay on empty slot until player switches, but auto blaster next shot via canUseWeapon
         }
       }
     }
@@ -606,16 +654,23 @@ export class Game {
     }
   }
 
-  fireWeapon(p, wep) {
+  fireWeapon(p, wep, aimMode = "forward") {
     const prone = !!p.prone;
     const mx = p.x + (p.facing > 0 ? p.w - 4 : 4);
     const my = p.y + (prone ? p.h * 0.45 : p.h * 0.38);
     const baseAngle = p.facing > 0 ? 0 : Math.PI;
 
-    // slight aim up if holding up
+    // Diagonal angles (~40°). E = up, X = down. Arrow keys still nudge when forward.
+    const DIAG = 0.70; // radians
     let aim = baseAngle;
-    if (isDown("up")) aim = p.facing > 0 ? -0.45 : Math.PI + 0.45;
-    if (isDown("down") && !p.onGround) aim = p.facing > 0 ? 0.5 : Math.PI - 0.5;
+    if (aimMode === "up") {
+      aim = p.facing > 0 ? -DIAG : Math.PI + DIAG;
+    } else if (aimMode === "down") {
+      aim = p.facing > 0 ? DIAG : Math.PI - DIAG;
+    } else {
+      if (isDown("up")) aim = p.facing > 0 ? -0.45 : Math.PI + 0.45;
+      if (isDown("down") && !p.onGround) aim = p.facing > 0 ? 0.5 : Math.PI - 0.5;
+    }
 
     const count = wep.count;
     const isRocket = !!wep.rocket;
@@ -787,6 +842,7 @@ export class Game {
     const step = (list, friendly) => {
       for (let i = list.length - 1; i >= 0; i--) {
         const b = list[i];
+        if (b.bomb && b.gravity) b.vy += b.gravity * dt;
         b.x += b.vx * dt;
         b.y += b.vy * dt;
         b.life -= dt;
@@ -834,7 +890,16 @@ export class Game {
         }
         if (hitWall) {
           if (b.rocket || b.special) this.explode(b.x + b.w / 2, b.y + b.h / 2, b.radius || 48, b.dmg, b);
-          else this.particles.sparks(b.x, b.y);
+          else if (b.bomb) {
+            this.particles.burst(b.x, b.y, b.color);
+            this.shake = Math.max(this.shake, 0.25);
+            sfx.explode();
+            const pl = this.player;
+            if (pl?.alive && pl.invuln <= 0) {
+              const d = Math.hypot(pl.x + pl.w / 2 - b.x, pl.y + pl.h / 2 - b.y);
+              if (d < (b.radius || 40)) this.hurtPlayer(b.dmg || 1);
+            }
+          } else this.particles.sparks(b.x, b.y);
           list.splice(i, 1);
           continue;
         }
@@ -874,6 +939,10 @@ export class Game {
           const p = this.player;
           if (p.alive && p.invuln <= 0 && rectsOverlap(b, p)) {
             this.hurtPlayer(b.dmg || 1);
+            if (b.bomb) {
+              this.particles.burst(b.x, b.y, b.color);
+              sfx.explode();
+            }
             list.splice(i, 1);
           }
         }
@@ -921,7 +990,21 @@ export class Game {
 
   damageEnemy(e, dmg, bullet) {
     let dealt = dmg;
-    if (bullet?.antiTank && (e.type === "turret" || e.type === "shooter")) {
+    // Frontal shield: block weak non-splash hits from the front
+    if (e.shield && bullet && !bullet.rocket && !bullet.special && !bullet.splash && !bullet.antiTank) {
+      const fromRight = (bullet.vx || 0) < 0;
+      const hittingFront = (e.facing > 0 && fromRight) || (e.facing < 0 && !fromRight);
+      if (hittingFront) {
+        this.particles.sparks(e.x + e.w / 2 + e.facing * 10, e.y + e.h * 0.4);
+        this.floatText(e.x, e.y - 16, "BLOCK", "#5b8def");
+        sfx.hit();
+        return;
+      }
+    }
+    if (e.armored && bullet && !bullet.antiTank && !bullet.rocket && !bullet.special) {
+      dealt = Math.max(1, Math.floor(dealt * 0.5));
+    }
+    if (bullet?.antiTank && (e.type === "turret" || e.type === "shooter" || e.armored || e.shield || e.type === "heavy")) {
       dealt = Math.ceil(dmg * (bullet.tankMul || 2));
       this.particles.sparks(e.x + e.w / 2, e.y + e.h / 2);
     }
@@ -944,6 +1027,9 @@ export class Game {
       sfx.explode();
       this.floatText(e.x, e.y - 10, `+${e.score}`, "#ffe566");
       this.floatText(e.x, e.y - 28, "KILL", "#ff2bd6");
+      if (this.player?.alive && this.player.onGround && !this.player.prone && Math.random() < 0.28) {
+        startFunAnim(this.player, pickFun(["celebrate", "flex", "point", "wave", "kick"]));
+      }
       if (chance(0.18)) {
         const types = ["health", "energy", "rapid", "spread", "shotgun", "laser", "plasma", "bazooka", "rail", "tankbuster"];
         this.pickups.push({
@@ -1014,20 +1100,20 @@ export class Game {
   updateEnemies(dt) {
     const p = this.player;
     const g = this.level.gravity;
+    // collect new spawns (e.g. none currently) after loop
+    const born = [];
 
     for (const e of this.enemies) {
       if (!e.alive) continue;
-      // only update near camera
-      if (e.x < this.cam.x - 120 || e.x > this.cam.x + W + 120) continue;
+      if (e.x < this.cam.x - 140 || e.x > this.cam.x + W + 140) continue;
 
       e.animT += dt;
       if (e.flash > 0) e.flash -= dt;
 
-      if (e.type === "grunt") {
+      if (e.type === "grunt" || e.type === "heavy" || e.type === "shield") {
         e.vy += g * dt;
         if (e.onGround) {
           e.vx = e.facing * e.speed;
-          // turn at edges / walls approximated by facing timer
           e.turnT -= dt;
           if (e.turnT <= 0) {
             e.facing *= -1;
@@ -1035,11 +1121,10 @@ export class Game {
           }
         }
         resolvePlatforms(e, this.level.platforms, dt);
-        if (p && Math.abs(p.x - e.x) < 280 && Math.abs(p.y - e.y) < 120) {
+        if (p && Math.abs(p.x - e.x) < 300 && Math.abs(p.y - e.y) < 140) {
           e.facing = p.x >= e.x ? 1 : -1;
         }
-        // contact damage
-        if (p?.alive && p.invuln <= 0 && rectsOverlap(p, e)) this.hurtPlayer(1);
+        if (p?.alive && p.invuln <= 0 && rectsOverlap(p, e)) this.hurtPlayer(e.type === "heavy" ? 2 : 1);
       } else if (e.type === "shooter") {
         e.vy += g * dt;
         resolvePlatforms(e, this.level.platforms, dt);
@@ -1051,15 +1136,91 @@ export class Game {
           e.fireCd = rand(1.1, 1.8);
         }
         if (p?.alive && p.invuln <= 0 && rectsOverlap(p, e)) this.hurtPlayer(1);
-      } else if (e.type === "flyer") {
-        e.phase += dt * e.freq;
+      } else if (e.type === "rusher") {
+        e.vy += g * dt;
+        e.chargeCd -= dt;
+        if (e.charging) {
+          e.chargeT -= dt;
+          e.vx = e.facing * e.speed * 3.2;
+          if (e.chargeT <= 0) {
+            e.charging = false;
+            e.chargeCd = rand(1.4, 2.2);
+            e.vx = 0;
+          }
+        } else if (e.onGround) {
+          e.vx = e.facing * e.speed * 0.6;
+          if (p && e.chargeCd <= 0 && Math.abs(p.x - e.x) < 260 && Math.abs(p.y - e.y) < 80) {
+            e.facing = p.x >= e.x ? 1 : -1;
+            e.charging = true;
+            e.chargeT = 0.55;
+            this.particles.emit(e.x + e.w / 2, e.y + e.h, {
+              count: 6, colors: ["#ff6b35", "#fff"], speed: 80, life: 0.2, gravity: 100,
+            });
+          }
+        }
+        resolvePlatforms(e, this.level.platforms, dt);
+        if (p?.alive && p.invuln <= 0 && rectsOverlap(p, e)) this.hurtPlayer(e.charging ? 2 : 1);
+      } else if (e.type === "bomber") {
+        e.vy += g * dt;
+        if (e.onGround) {
+          e.vx = e.facing * e.speed;
+          e.turnT -= dt;
+          if (e.turnT <= 0) {
+            e.facing *= -1;
+            e.turnT = rand(1.4, 2.6);
+          }
+        }
+        resolvePlatforms(e, this.level.platforms, dt);
+        if (p && Math.abs(p.x - e.x) < 360) e.facing = p.x >= e.x ? 1 : -1;
+        e.fireCd -= dt;
+        if (e.fireCd <= 0 && p && Math.abs(p.x - e.x) < 400) {
+          this.enemyLob(e, p);
+          e.fireCd = rand(1.6, 2.4);
+        }
+        if (p?.alive && p.invuln <= 0 && rectsOverlap(p, e)) this.hurtPlayer(1);
+      } else if (e.type === "sniper") {
+        e.vy += g * dt;
+        resolvePlatforms(e, this.level.platforms, dt);
+        e.vx = 0;
+        if (p) e.facing = p.x >= e.x ? 1 : -1;
+        e.fireCd -= dt;
+        if (!e.aiming && e.fireCd <= 0 && p && Math.abs(p.x - e.x) < 620) {
+          e.aiming = true;
+          e.aimT = 0.85;
+        }
+        if (e.aiming) {
+          e.aimT -= dt;
+          if (e.aimT <= 0) {
+            e.aiming = false;
+            this.enemyShoot(e, 520, true, { dmg: 2, color: "#39ff9a", w: 10, h: 4, sniper: true });
+            e.fireCd = rand(2.0, 2.8);
+          }
+        }
+        if (p?.alive && p.invuln <= 0 && rectsOverlap(p, e)) this.hurtPlayer(1);
+      } else if (e.type === "hopper") {
+        e.vy += g * dt;
+        e.hopCd -= dt;
+        if (e.onGround) {
+          e.vx *= 0.85;
+          if (p && e.hopCd <= 0) {
+            e.facing = p.x >= e.x ? 1 : -1;
+            e.vy = -520;
+            e.vx = e.facing * 180;
+            e.onGround = false;
+            e.hopCd = rand(1.0, 1.7);
+          }
+        }
+        resolvePlatforms(e, this.level.platforms, dt);
+        if (p?.alive && p.invuln <= 0 && rectsOverlap(p, e)) this.hurtPlayer(1);
+      } else if (e.type === "drone") {
+        e.phase += dt * 2.8;
         e.y = e.baseY + Math.sin(e.phase) * e.amp;
         e.x += e.facing * e.speed * dt;
         if (e.x < e.minX || e.x > e.maxX) e.facing *= -1;
         e.fireCd -= dt;
-        if (e.fireCd <= 0 && p && Math.abs(p.x - e.x) < 380) {
-          this.enemyShoot(e, 240, true);
-          e.fireCd = rand(1.4, 2.2);
+        if (e.fireCd <= 0 && p && Math.abs(p.x - e.x) < 340) {
+          this.enemyShoot(e, 260, true, { color: "#1abc9c" });
+          e.fireCd = rand(1.2, 1.9);
         }
         if (p?.alive && p.invuln <= 0 && rectsOverlap(p, e)) this.hurtPlayer(1);
       } else if (e.type === "turret") {
@@ -1071,11 +1232,24 @@ export class Game {
           this.enemyShoot(e, 320, true);
           e.fireCd = rand(0.9, 1.4);
         }
+      } else if (e.type === "flyer") {
+        // legacy support
+        e.phase += dt * e.freq;
+        e.y = e.baseY + Math.sin(e.phase) * e.amp;
+        e.x += e.facing * e.speed * dt;
+        if (e.x < e.minX || e.x > e.maxX) e.facing *= -1;
+        e.fireCd -= dt;
+        if (e.fireCd <= 0 && p && Math.abs(p.x - e.x) < 380) {
+          this.enemyShoot(e, 240, true);
+          e.fireCd = rand(1.4, 2.2);
+        }
+        if (p?.alive && p.invuln <= 0 && rectsOverlap(p, e)) this.hurtPlayer(1);
       }
     }
+    if (born.length) this.enemies.push(...born);
   }
 
-  enemyShoot(e, speed, aim = false) {
+  enemyShoot(e, speed, aim = false, opts = {}) {
     const p = this.player;
     let ang = e.facing > 0 ? 0 : Math.PI;
     if (aim && p) {
@@ -1087,14 +1261,40 @@ export class Game {
     this.enemyBullets.push({
       x: e.x + e.w / 2,
       y: e.y + e.h * 0.4,
-      w: 8,
-      h: 8,
+      w: opts.w || 8,
+      h: opts.h || 8,
       vx: Math.cos(ang) * speed,
       vy: Math.sin(ang) * speed,
-      dmg: 1,
-      color: "#ff3b5c",
-      life: 2.5,
+      dmg: opts.dmg || 1,
+      color: opts.color || "#ff3b5c",
+      life: opts.life || 2.5,
       friendly: false,
+      sniper: !!opts.sniper,
+    });
+  }
+
+  /** Lobbed grenade with gravity */
+  enemyLob(e, p) {
+    const sx = e.x + e.w / 2;
+    const sy = e.y + e.h * 0.3;
+    const tx = p.x + p.w / 2;
+    const dx = tx - sx;
+    const vx = clamp(dx * 0.9, -220, 220);
+    const vy = -320 - Math.random() * 80;
+    this.enemyBullets.push({
+      x: sx,
+      y: sy,
+      w: 12,
+      h: 12,
+      vx,
+      vy,
+      dmg: 2,
+      color: "#c4a035",
+      life: 3,
+      friendly: false,
+      bomb: true,
+      gravity: 700,
+      radius: 40,
     });
   }
 
@@ -1412,7 +1612,12 @@ export class Game {
     ctx.moveTo(0, H - 40);
     ctx.lineTo(W, H - 40);
     ctx.stroke();
-    drawPlayerLive(ctx, W * 0.5 - 14, H - 40 - 46, 28, 46, 1, "idle", this.time, { weaponColor: "#2ec4ff" });
+    const titleFun = ["wave", "flex", "dance", "celebrate", "look"][Math.floor(this.time / 2.5) % 5];
+    drawPlayerLive(ctx, W * 0.5 - 14, H - 40 - 46, 28, 46, 1, "idle", this.time, {
+      weaponColor: "#2ec4ff",
+      fun: titleFun,
+      funT: this.time % 2.5,
+    });
   }
 
   drawBackground(ctx) {
@@ -1564,6 +1769,10 @@ export class Game {
           muzzleFlash: p.muzzleFlash,
           weaponColor: wcol,
           invuln: p.invuln > 0,
+          flip: p.flip || 0,
+          flipSpeed: p.flipSpeed || 0,
+          fun: p.fun,
+          funT: p.funT || 0,
         });
       }
     }
@@ -1676,7 +1885,7 @@ export class Game {
     ctx.font = "9px Share Tech Mono, monospace";
     ctx.fillStyle = "#7a8aaa";
     ctx.textAlign = "right";
-    ctx.fillText("J fire · K switch · 1-9", W - 16, y - 6);
+    ctx.fillText("J → · E ↗ · X ↘ · K switch", W - 16, y - 6);
   }
 }
 
@@ -1725,7 +1934,24 @@ function createPlayer(x, y) {
     dustT: 0,
     prone: false,
     proneLock: 0,
+    flip: 0,
+    flipSpeed: 0,
+    fun: null,
+    funT: 0,
+    funDur: 0,
+    funCd: 0.5,
   };
+}
+
+function pickFun(list) {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+function startFunAnim(p, name) {
+  if (!p || p.prone) return;
+  p.fun = name;
+  p.funT = 0;
+  p.funDur = name === "spin" ? 0.55 : name === "kick" ? 0.4 : name === "dance" ? 0.9 : 0.7;
 }
 
 /** Keep feet planted while swapping stand/prone hitboxes */
@@ -1792,56 +2018,53 @@ function createEnemy(def) {
     fireCd: rand(0.3, 1.2),
   };
 
-  if (def.type === "grunt") {
-    return {
-      ...base,
-      w: 30,
-      h: 40,
-      speed: 70,
-      hp: 3,
-      score: 200,
-      color: "#ff3b5c",
-      turnT: rand(1, 2),
-    };
+  switch (def.type) {
+    case "grunt":
+      return { ...base, w: 30, h: 40, speed: 70, hp: 3, score: 200, color: "#ff3b5c", turnT: rand(1, 2) };
+    case "shooter":
+      return { ...base, w: 28, h: 42, speed: 0, hp: 4, score: 350, color: "#ff9f1a" };
+    case "turret":
+      return { ...base, w: 32, h: 28, speed: 0, hp: 6, score: 400, color: "#b48aff" };
+    case "heavy":
+      // slow armored brute
+      return { ...base, w: 40, h: 48, speed: 42, hp: 12, score: 500, color: "#6b7c93", turnT: rand(1.5, 2.5), armored: true };
+    case "rusher":
+      // charges the player
+      return {
+        ...base, w: 28, h: 38, speed: 55, hp: 3, score: 300, color: "#ff6b35",
+        chargeCd: rand(0.5, 1.5), charging: false, chargeT: 0, turnT: rand(1, 2),
+      };
+    case "bomber":
+      // lobs arcing grenades
+      return { ...base, w: 30, h: 40, speed: 45, hp: 5, score: 400, color: "#c4a035", turnT: rand(1.2, 2.2), fireCd: rand(0.8, 1.6) };
+    case "sniper":
+      // long-range, telegraph beam then high dmg
+      return {
+        ...base, w: 26, h: 44, speed: 0, hp: 3, score: 450, color: "#3d8b7a",
+        fireCd: rand(1.5, 2.5), aimT: 0, aiming: false,
+      };
+    case "shield":
+      // frontal shield blocks weak shots
+      return {
+        ...base, w: 32, h: 42, speed: 50, hp: 8, score: 450, color: "#5b8def",
+        turnT: rand(1.5, 2.5), shield: true,
+      };
+    case "hopper":
+      // jumps toward player
+      return {
+        ...base, w: 28, h: 34, speed: 40, hp: 4, score: 350, color: "#9b59b6",
+        hopCd: rand(0.6, 1.2),
+      };
+    case "drone":
+      // low hover (not free-fly orbs) — stays near spawn height, short range
+      return {
+        ...base, w: 30, h: 22, speed: 70, hp: 3, score: 320, color: "#1abc9c",
+        baseY: def.y, phase: rand(0, Math.PI * 2), amp: 12, fireCd: rand(0.8, 1.4),
+        minX: def.x - 100, maxX: def.x + 100,
+      };
+    default:
+      return { ...base, w: 30, h: 40, speed: 70, hp: 3, score: 200, color: "#ff3b5c", turnT: 1.5 };
   }
-  if (def.type === "shooter") {
-    return {
-      ...base,
-      w: 28,
-      h: 42,
-      speed: 0,
-      hp: 4,
-      score: 350,
-      color: "#ff9f1a",
-    };
-  }
-  if (def.type === "flyer") {
-    return {
-      ...base,
-      w: 34,
-      h: 24,
-      speed: 90,
-      hp: 2,
-      score: 300,
-      color: "#00f0ff",
-      baseY: def.y,
-      phase: rand(0, Math.PI * 2),
-      amp: 28,
-      freq: 2.5,
-      minX: def.x - 120,
-      maxX: def.x + 120,
-    };
-  }
-  // turret
-  return {
-    ...base,
-    w: 32,
-    h: 28,
-    speed: 0,
-    hp: 6,
-    score: 400,
-    color: "#b48aff",
-  };
 }
 
 function createBoss(def) {

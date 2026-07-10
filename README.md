@@ -10,8 +10,8 @@ ES modules need a local server (opening `index.html` via `file://` will not work
 
 ```bash
 cd neon-strike
-./serve.sh deps           # check / install dependencies (python3, …)
-./serve.sh start          # installs deps if needed, then serves http://127.0.0.1:8080
+./serve.sh deps           # check / install dependencies (python3, curl, lsof)
+./serve.sh start          # ALWAYS installs/checks deps first, then serves http://127.0.0.1:8080
 ./serve.sh open           # start (if needed) + open browser
 ./serve.sh status
 ./serve.sh stop
@@ -47,7 +47,7 @@ python3 -m http.server 8080
 ## Gameplay
 
 - **3 lives**, **5 HP**, regenerating **energy** for special shots  
-- **Controls**: **J** fire · **K** switch weapon · **X** special
+- **Controls**: **J** fire forward · **E** fire ↗ · **X** fire ↘ · **K** switch · **C** special
 - **Arsenal**: Unlock guns by picking them up; they stay for the whole run with ammo
 - **Switch**: **K** (cycle), `1`–`9`, `Q`/`E`, or scroll
 - **Guns**: Blaster · Rapid · Spread · Shotgun · Laser · Plasma · Bazooka

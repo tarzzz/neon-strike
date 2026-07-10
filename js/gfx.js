@@ -64,203 +64,207 @@ function softCircle(ctx, x, y, r, color) {
 
 // ─── Player (illustrated) ───────────────────────────────
 
+const FUN_POSES = ["wave", "flex", "dance", "spin", "look", "celebrate", "kick", "point"];
+
+/**
+ * pose: { anim, t, recoil, muzzleFlash, flip, fun, funT }
+ * flip = radians of body somersault
+ * fun  = optional flair animation name
+ */
 function paintCommando(ctx, W, H, pose, facing, weaponColor) {
-  // local coords: feet at bottom center of canvas
   ctx.save();
   ctx.translate(W / 2, H);
   ctx.scale(facing, 1);
 
   const wc = weaponColor || "#2ec4ff";
   const t = pose.t || 0;
+  const fun = pose.fun || null;
+  const funT = pose.funT || 0;
+  const flip = pose.flip || 0;
+  const airborne = pose.anim === "jump" || pose.anim === "fall" || pose.anim === "flip";
   const prone = pose.anim === "prone" || pose.anim === "crawl";
   const run = pose.anim === "run";
-  const jump = pose.anim === "jump";
-  const fall = pose.anim === "fall";
   const crawl = pose.anim === "crawl";
   const phase = t * 14;
   const bob = run ? Math.abs(Math.sin(phase)) * 2.5 : Math.sin(t * 3) * 1;
   const recoil = (pose.recoil || 0) * 12;
 
-  // soft ground contact shadow
+  // soft ground contact shadow (not rotating)
   ctx.fillStyle = "rgba(20, 40, 60, 0.28)";
   ctx.beginPath();
-  ctx.ellipse(0, -2, prone ? 22 : 14, 4, 0, 0, Math.PI * 2);
+  const shR = airborne ? 9 : prone ? 22 : 14;
+  ctx.ellipse(0, -2, shR, airborne ? 3 : 4, 0, 0, Math.PI * 2);
   ctx.fill();
 
   if (prone) {
-    const cyc = crawl ? Math.sin(t * 12) * 2.5 : 0;
-    // legs back
-    limb(ctx, -4, -8, -16 - cyc, -5, 6, "#1a2a40");
-    limb(ctx, -4, -8, -14 + cyc, -4, 6, "#243550");
-    ctx.fillStyle = "#0e1828";
-    ctx.beginPath();
-    ctx.ellipse(-18 - cyc, -3, 5, 2.5, 0, 0, Math.PI * 2);
-    ctx.ellipse(-16 + cyc, -3, 5, 2.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // body slab with armor gradient
-    const body = ctx.createLinearGradient(-18, -14, 14, -2);
-    body.addColorStop(0, "#1e4a72");
-    body.addColorStop(0.5, "#3a8ec4");
-    body.addColorStop(1, "#1a3d62");
-    ctx.fillStyle = body;
-    roundRectPath(ctx, -16, -14, 30, 12, 5);
-    ctx.fill();
-    // plate highlights
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
-    roundRectPath(ctx, -12, -12, 12, 5, 2);
-    ctx.fill();
-
-    // chest light
-    ctx.fillStyle = wc;
-    ctx.shadowColor = wc;
-    ctx.shadowBlur = 8;
-    ctx.fillRect(-2, -10, 8, 4);
-    ctx.shadowBlur = 0;
-
-    // head
-    const hx = 12;
-    const hy = -10;
-    const skin = ctx.createRadialGradient(hx - 2, hy - 2, 1, hx, hy, 8);
-    skin.addColorStop(0, "#f2d2b6");
-    skin.addColorStop(1, "#c99578");
-    ctx.fillStyle = skin;
-    ctx.beginPath();
-    ctx.arc(hx, hy, 7.5, 0, Math.PI * 2);
-    ctx.fill();
-    // helmet
-    ctx.fillStyle = "#1a2c44";
-    ctx.beginPath();
-    ctx.arc(hx, hy - 1, 7.5, Math.PI * 1.05, Math.PI * 1.95);
-    ctx.fill();
-    ctx.fillStyle = wc;
-    ctx.shadowColor = wc;
-    ctx.shadowBlur = 6;
-    roundRectPath(ctx, hx - 5, hy - 2, 11, 3, 1);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    // bandana
-    ctx.fillStyle = "#e91e8c";
-    roundRectPath(ctx, hx - 6, hy - 7, 12, 2.5, 1);
-    ctx.fill();
-
-    // rifle along ground
-    ctx.fillStyle = "#2a3344";
-    roundRectPath(ctx, 8 - recoil, -7, 24, 5, 2);
-    ctx.fill();
-    ctx.fillStyle = wc;
-    ctx.fillRect(28 - recoil, -6, 5, 3);
-
-    if (pose.muzzleFlash > 0) {
-      const mf = pose.muzzleFlash / 0.06;
-      ctx.fillStyle = `rgba(255,255,220,${mf})`;
-      ctx.beginPath();
-      ctx.arc(34 - recoil, -4.5, 6 * mf, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    paintProne(ctx, t, crawl, wc, recoil, pose);
     ctx.restore();
     return;
   }
 
-  // ── Standing / run / jump ──
+  // Somersault: rotate whole body around mid-torso
+  if (airborne && Math.abs(flip) > 0.01) {
+    ctx.translate(0, -28);
+    ctx.rotate(flip);
+    ctx.translate(0, 28);
+  }
+
+  // Fun spin (grounded twirl)
+  if (fun === "spin") {
+    ctx.translate(0, -28);
+    ctx.rotate(funT * 14);
+    ctx.translate(0, 28);
+  }
+
+  // ── Limb targets ──
   const hipY = -18 + bob;
   let lx1 = -5, ly1 = hipY, lx2 = -6, ly2 = -3;
   let rx1 = 5, ry1 = hipY, rx2 = 6, ry2 = -3;
-  if (run) {
+  let armBack = null; // [x2,y2]
+  let armGun = null;
+  let headOffX = 0;
+  let gunHide = false;
+  let torsoBob = bob;
+
+  if (airborne) {
+    // tucked somersault pose
+    const tuck = 0.65 + Math.abs(Math.sin(flip * 2)) * 0.2;
+    lx2 = -8 * tuck;
+    ly2 = -12 - 4 * tuck;
+    rx2 = 9 * tuck;
+    ry2 = -11 - 3 * tuck;
+    armBack = [-10, -28];
+    armGun = [12, -22];
+    gunHide = Math.abs(Math.sin(flip)) > 0.85; // flash hide mid-spin
+  } else if (run) {
     const a = Math.sin(phase);
     const b = Math.sin(phase + Math.PI);
     lx2 = -4 + a * 11;
     ly2 = -3 + Math.max(0, -a) * 3;
     rx2 = 4 + b * 11;
     ry2 = -3 + Math.max(0, -b) * 3;
-    lx1 = -5;
-    rx1 = 5;
-  } else if (jump) {
-    lx2 = -12;
-    ly2 = -10;
-    rx2 = 10;
-    ry2 = -8;
-  } else if (fall) {
-    lx2 = -4;
+    armBack = [-12, -24 + bob + Math.sin(phase + Math.PI) * 7];
+  } else if (fun === "wave") {
+    // one arm waving overhead
+    const wiggle = Math.sin(funT * 16) * 10;
+    armBack = [-4 + wiggle * 0.2, -52 + Math.abs(wiggle) * 0.15];
+    armGun = [14, -28];
+    torsoBob = bob + Math.sin(funT * 8) * 1.5;
+  } else if (fun === "flex") {
+    armBack = [-14, -40];
+    armGun = [14, -40];
+    torsoBob = bob - 2;
+    lx2 = -8;
     ly2 = -2;
     rx2 = 8;
     ry2 = -2;
+  } else if (fun === "dance") {
+    const d = Math.sin(funT * 12);
+    torsoBob = bob + d * 3;
+    lx2 = -6 + d * 6;
+    ly2 = -2;
+    rx2 = 6 - d * 6;
+    ry2 = -2;
+    armBack = [-12, -36 + d * 8];
+    armGun = [12, -36 - d * 8];
+  } else if (fun === "look") {
+    headOffX = Math.sin(funT * 3) * 5;
+    armGun = [12, -28];
+  } else if (fun === "celebrate") {
+    const c = Math.sin(funT * 14);
+    armBack = [-8, -54 + c * 4];
+    armGun = [8, -54 - c * 4];
+    torsoBob = bob + Math.abs(c) * 2;
+    lx2 = -4 + c * 3;
+    rx2 = 4 - c * 3;
+  } else if (fun === "kick") {
+    const k = Math.min(1, funT * 6);
+    rx2 = 6 + k * 16;
+    ry2 = -8 - k * 6;
+    lx2 = -8;
+    ly2 = -2;
+    armBack = [-10, -30];
+    armGun = [10, -26];
+  } else if (fun === "point") {
+    armGun = [22, -36];
+    armBack = [-8, -28];
+    headOffX = 3;
   }
 
-  // legs (pants)
+  // legs
   limb(ctx, lx1, ly1, lx2, ly2, 7, "#1a2a40");
   limb(ctx, rx1, ry1, rx2, ry2, 7, "#243550");
-  // boots
   ctx.fillStyle = "#0c1420";
   ctx.beginPath();
   ctx.ellipse(lx2, ly2 + 1, 5.5, 2.8, 0, 0, Math.PI * 2);
   ctx.ellipse(rx2, ry2 + 1, 5.5, 2.8, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // scarf / cape
-  if (run || jump || fall) {
-    const flap = Math.sin(t * 11) * 3;
+  // scarf
+  if (run || airborne || fun === "dance" || fun === "celebrate" || fun === "spin") {
+    const flap = Math.sin(t * 11 + flip * 2) * 4;
     const scarf = ctx.createLinearGradient(-6, -34, -22, -18);
     scarf.addColorStop(0, "#ff3db0");
-    scarf.addColorStop(1, "rgba(200, 20, 120, 0.15)");
+    scarf.addColorStop(1, "rgba(200, 20, 120, 0.12)");
     ctx.fillStyle = scarf;
     ctx.beginPath();
-    ctx.moveTo(-4, -32);
-    ctx.quadraticCurveTo(-18, -28 + flap, -20, -14 + flap);
-    ctx.quadraticCurveTo(-12, -20, -3, -28);
+    ctx.moveTo(-4, -32 + torsoBob);
+    ctx.quadraticCurveTo(-18 - Math.abs(flip) * 2, -28 + flap, -22, -12 + flap);
+    ctx.quadraticCurveTo(-12, -20, -3, -28 + torsoBob);
     ctx.fill();
   }
 
-  // torso armor
+  // torso
   const torsoG = ctx.createLinearGradient(-12, -40, 12, -18);
   torsoG.addColorStop(0, "#1a4568");
-  torsoG.addColorStop(0.45, "#3d9fd4");
+  torsoG.addColorStop(0.45, fun === "flex" ? "#5ec0f0" : "#3d9fd4");
   torsoG.addColorStop(1, "#163a58");
   ctx.fillStyle = torsoG;
-  roundRectPath(ctx, -11, -40 + bob, 22, 22, 6);
+  roundRectPath(ctx, -11, -40 + torsoBob, 22, 22, 6);
   ctx.fill();
-  // shoulder pads
   ctx.fillStyle = "#2a6088";
   ctx.beginPath();
-  ctx.ellipse(-11, -34 + bob, 5, 4, -0.3, 0, Math.PI * 2);
-  ctx.ellipse(11, -34 + bob, 5, 4, 0.3, 0, Math.PI * 2);
+  ctx.ellipse(-11, -34 + torsoBob, 5, 4, -0.3, 0, Math.PI * 2);
+  ctx.ellipse(11, -34 + torsoBob, 5, 4, 0.3, 0, Math.PI * 2);
   ctx.fill();
-  // armor sheen
   ctx.fillStyle = "rgba(255,255,255,0.2)";
-  roundRectPath(ctx, -7, -37 + bob, 8, 10, 3);
+  roundRectPath(ctx, -7, -37 + torsoBob, 8, 10, 3);
   ctx.fill();
-  // core reactor
   ctx.fillStyle = wc;
   ctx.shadowColor = wc;
   ctx.shadowBlur = 10;
-  roundRectPath(ctx, -3.5, -32 + bob, 7, 8, 2);
+  roundRectPath(ctx, -3.5, -32 + torsoBob, 7, 8, 2);
   ctx.fill();
   ctx.shadowBlur = 0;
 
   // back arm
-  if (run) {
+  if (armBack) {
+    limb(ctx, -6, -32 + torsoBob, armBack[0], armBack[1] + torsoBob * 0.3, 5, "#c9a08a");
+    ctx.fillStyle = "#c9a08a";
+    ctx.beginPath();
+    ctx.arc(armBack[0], armBack[1] + torsoBob * 0.3, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (run) {
     const arm = Math.sin(phase + Math.PI) * 7;
-    limb(ctx, -6, -32 + bob, -12, -24 + bob + arm, 5, "#c9a08a");
+    limb(ctx, -6, -32 + torsoBob, -12, -24 + torsoBob + arm, 5, "#c9a08a");
   }
 
   // head
-  const headY = -48 + bob;
-  const skin = ctx.createRadialGradient(-2, headY - 3, 1, 0, headY, 10);
+  const headY = -48 + torsoBob;
+  const skin = ctx.createRadialGradient(-2 + headOffX, headY - 3, 1, headOffX, headY, 10);
   skin.addColorStop(0, "#f5d7bc");
   skin.addColorStop(1, "#c48b6a");
   ctx.fillStyle = skin;
   ctx.beginPath();
-  ctx.arc(0, headY, 9.5, 0, Math.PI * 2);
+  ctx.arc(headOffX, headY, 9.5, 0, Math.PI * 2);
   ctx.fill();
-  // helmet shell
   const helm = ctx.createLinearGradient(-9, headY - 10, 9, headY);
   helm.addColorStop(0, "#1a3048");
   helm.addColorStop(1, "#2a4a6a");
   ctx.fillStyle = helm;
   ctx.beginPath();
-  ctx.arc(0, headY - 1, 9.5, Math.PI * 1.05, -0.05);
+  ctx.arc(headOffX, headY - 1, 9.5, Math.PI * 1.05, -0.05);
   ctx.fill();
-  // visor glass
   const visor = ctx.createLinearGradient(-7, headY - 2, 7, headY + 2);
   visor.addColorStop(0, wc);
   visor.addColorStop(0.5, "#ffffff");
@@ -268,60 +272,137 @@ function paintCommando(ctx, W, H, pose, facing, weaponColor) {
   ctx.fillStyle = visor;
   ctx.shadowColor = wc;
   ctx.shadowBlur = 8;
-  roundRectPath(ctx, -7, headY - 2, 14, 4, 1.5);
+  roundRectPath(ctx, headOffX - 7, headY - 2, 14, 4, 1.5);
   ctx.fill();
   ctx.shadowBlur = 0;
-  // bandana
-  ctx.fillStyle = "#e91e8c";
-  roundRectPath(ctx, -8, headY - 9, 16, 3, 1);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(-8, headY - 7);
-  ctx.quadraticCurveTo(-16, headY - 5 + Math.sin(t * 9) * 2, -18, headY + 2);
-  ctx.lineTo(-8, headY - 5);
-  ctx.fill();
-
-  // gun arm + weapon
-  const gunY = -30 + bob;
-  limb(ctx, 6, -32 + bob, 14 - recoil * 0.2, gunY, 5.5, "#c9a08a");
-  // glove
-  ctx.fillStyle = "#2a3a50";
-  ctx.beginPath();
-  ctx.arc(14 - recoil * 0.2, gunY, 3.5, 0, Math.PI * 2);
-  ctx.fill();
-  // gun body with metal sheen
-  const gun = ctx.createLinearGradient(12 - recoil, gunY - 5, 34 - recoil, gunY + 5);
-  gun.addColorStop(0, "#2c3548");
-  gun.addColorStop(0.5, "#5a6a80");
-  gun.addColorStop(1, "#1e2838");
-  ctx.fillStyle = gun;
-  roundRectPath(ctx, 12 - recoil, gunY - 4, 20, 8, 2);
-  ctx.fill();
-  ctx.fillStyle = wc;
-  ctx.shadowColor = wc;
-  ctx.shadowBlur = 6;
-  ctx.fillRect(30 - recoil, gunY - 2, 6, 4);
-  ctx.shadowBlur = 0;
-
-  if (pose.muzzleFlash > 0) {
-    const mf = Math.min(1, pose.muzzleFlash / 0.06);
-    const mg = ctx.createRadialGradient(36 - recoil, gunY, 0, 36 - recoil, gunY, 12 * mf);
-    mg.addColorStop(0, "rgba(255,255,255,0.95)");
-    mg.addColorStop(0.4, "rgba(255,220,100,0.7)");
-    mg.addColorStop(1, "rgba(255,120,40,0)");
-    ctx.fillStyle = mg;
+  // smile spark when celebrating
+  if (fun === "celebrate" || fun === "wave") {
+    ctx.strokeStyle = "rgba(255,100,140,0.7)";
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(36 - recoil, gunY, 12 * mf, 0, Math.PI * 2);
+    ctx.arc(headOffX + 2, headY + 4, 3, 0.1, Math.PI - 0.1);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#e91e8c";
+  roundRectPath(ctx, headOffX - 8, headY - 9, 16, 3, 1);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(headOffX - 8, headY - 7);
+  ctx.quadraticCurveTo(headOffX - 16, headY - 5 + Math.sin(t * 9 + flip) * 3, headOffX - 20, headY + 3);
+  ctx.lineTo(headOffX - 8, headY - 5);
+  ctx.fill();
+
+  // gun arm (skip or tuck mid-somersault)
+  if (!gunHide) {
+    const gunY = armGun ? armGun[1] : -30 + torsoBob;
+    const gunX = armGun ? armGun[0] : 14 - recoil * 0.2;
+    limb(ctx, 6, -32 + torsoBob, gunX, gunY, 5.5, "#c9a08a");
+    ctx.fillStyle = "#2a3a50";
+    ctx.beginPath();
+    ctx.arc(gunX, gunY, 3.5, 0, Math.PI * 2);
     ctx.fill();
+    if (fun !== "flex" && fun !== "celebrate" && fun !== "wave") {
+      const gun = ctx.createLinearGradient(gunX - 2, gunY - 5, gunX + 20, gunY + 5);
+      gun.addColorStop(0, "#2c3548");
+      gun.addColorStop(0.5, "#5a6a80");
+      gun.addColorStop(1, "#1e2838");
+      ctx.fillStyle = gun;
+      roundRectPath(ctx, gunX - 2 - (fun === "point" ? 0 : recoil), gunY - 4, fun === "point" ? 18 : 20, 8, 2);
+      ctx.fill();
+      ctx.fillStyle = wc;
+      ctx.shadowColor = wc;
+      ctx.shadowBlur = 6;
+      ctx.fillRect(gunX + 14 - recoil, gunY - 2, 6, 4);
+      ctx.shadowBlur = 0;
+    }
+    if (pose.muzzleFlash > 0 && !airborne) {
+      const mf = Math.min(1, pose.muzzleFlash / 0.06);
+      const mx = gunX + 20 - recoil;
+      const mg = ctx.createRadialGradient(mx, gunY, 0, mx, gunY, 12 * mf);
+      mg.addColorStop(0, "rgba(255,255,255,0.95)");
+      mg.addColorStop(0.4, "rgba(255,220,100,0.7)");
+      mg.addColorStop(1, "rgba(255,120,40,0)");
+      ctx.fillStyle = mg;
+      ctx.beginPath();
+      ctx.arc(mx, gunY, 12 * mf, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // motion lines during fast flip
+  if (airborne && Math.abs(pose.flipSpeed || 0) > 8) {
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 4; i++) {
+      const a = flip + i * 0.4;
+      ctx.beginPath();
+      ctx.arc(0, -28, 22 + i * 3, a, a + 0.5);
+      ctx.stroke();
+    }
   }
 
   ctx.restore();
 }
 
-/**
- * Draw player with optional live pose (uncached when animating).
- * Uses short-lived cache keys for discrete frames when possible.
- */
+function paintProne(ctx, t, crawl, wc, recoil, pose) {
+  const cyc = crawl ? Math.sin(t * 12) * 2.5 : 0;
+  limb(ctx, -4, -8, -16 - cyc, -5, 6, "#1a2a40");
+  limb(ctx, -4, -8, -14 + cyc, -4, 6, "#243550");
+  ctx.fillStyle = "#0e1828";
+  ctx.beginPath();
+  ctx.ellipse(-18 - cyc, -3, 5, 2.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(-16 + cyc, -3, 5, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const body = ctx.createLinearGradient(-18, -14, 14, -2);
+  body.addColorStop(0, "#1e4a72");
+  body.addColorStop(0.5, "#3a8ec4");
+  body.addColorStop(1, "#1a3d62");
+  ctx.fillStyle = body;
+  roundRectPath(ctx, -16, -14, 30, 12, 5);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  roundRectPath(ctx, -12, -12, 12, 5, 2);
+  ctx.fill();
+  ctx.fillStyle = wc;
+  ctx.shadowColor = wc;
+  ctx.shadowBlur = 8;
+  ctx.fillRect(-2, -10, 8, 4);
+  ctx.shadowBlur = 0;
+  const hx = 12, hy = -10;
+  const skin = ctx.createRadialGradient(hx - 2, hy - 2, 1, hx, hy, 8);
+  skin.addColorStop(0, "#f2d2b6");
+  skin.addColorStop(1, "#c99578");
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.arc(hx, hy, 7.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#1a2c44";
+  ctx.beginPath();
+  ctx.arc(hx, hy - 1, 7.5, Math.PI * 1.05, Math.PI * 1.95);
+  ctx.fill();
+  ctx.fillStyle = wc;
+  ctx.shadowColor = wc;
+  ctx.shadowBlur = 6;
+  roundRectPath(ctx, hx - 5, hy - 2, 11, 3, 1);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#e91e8c";
+  roundRectPath(ctx, hx - 6, hy - 7, 12, 2.5, 1);
+  ctx.fill();
+  ctx.fillStyle = "#2a3344";
+  roundRectPath(ctx, 8 - recoil, -7, 24, 5, 2);
+  ctx.fill();
+  ctx.fillStyle = wc;
+  ctx.fillRect(28 - recoil, -6, 5, 3);
+  if (pose.muzzleFlash > 0) {
+    const mf = pose.muzzleFlash / 0.06;
+    ctx.fillStyle = `rgba(255,255,220,${mf})`;
+    ctx.beginPath();
+    ctx.arc(34 - recoil, -4.5, 6 * mf, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 export function drawPlayer(ctx, x, y, w, h, facing, anim, animT, fx = {}) {
   drawPlayerLive(ctx, x, y, w, h, facing, anim, animT, fx);
 }
@@ -334,12 +415,8 @@ export function drawPlayerLive(ctx, x, y, w, h, facing, anim, animT, fx = {}) {
   ctx.save();
   ctx.translate(feetX, feetY);
   if (squash > 0) ctx.scale(1 + squash * 0.14, 1 - squash * 0.18);
-  // paintCommando expects feet at (W/2, H) in its canvas — use local transform
-  ctx.translate(0, 0);
-  // Emulate paintCommando space: origin at feet, Y up is negative inside paint
-  // paintCommando does translate(W/2,H) then draws upward — call with synthetic size
-  const dw = 72;
-  const dh = 64;
+  const dw = 80;
+  const dh = 72;
   ctx.translate(-dw / 2, -dh + 2);
   paintCommando(
     ctx,
@@ -350,6 +427,10 @@ export function drawPlayerLive(ctx, x, y, w, h, facing, anim, animT, fx = {}) {
       t: animT,
       recoil: fx.recoil || 0,
       muzzleFlash: fx.muzzleFlash || 0,
+      flip: fx.flip || 0,
+      flipSpeed: fx.flipSpeed || 0,
+      fun: fx.fun || null,
+      funT: fx.funT || 0,
     },
     facing,
     fx.weaponColor || "#2ec4ff"
@@ -357,7 +438,7 @@ export function drawPlayerLive(ctx, x, y, w, h, facing, anim, animT, fx = {}) {
   ctx.restore();
   if (fx.invuln) {
     ctx.save();
-    ctx.globalAlpha = 0.15 + Math.sin(animT * 28) * 0.1;
+    ctx.globalAlpha = 0.12 + Math.sin(animT * 28) * 0.08;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
     ctx.restore();
@@ -498,23 +579,212 @@ function paintTurret(ctx, W, H, facing, t, flash) {
 
 export function drawEnemyLive(ctx, x, y, e, time) {
   const flash = e.flash > 0;
+  ctx.save();
+  if (flash) ctx.globalAlpha = 0.7 + Math.sin(time * 40) * 0.3;
+
   if (e.type === "turret") {
-    const dw = 40;
-    const dh = 36;
-    ctx.save();
-    if (flash) ctx.globalAlpha = 0.7 + Math.sin(time * 40) * 0.3;
+    const dw = 40, dh = 36;
     ctx.translate(x + e.w / 2 - dw / 2, y + e.h - dh);
     paintTurret(ctx, dw, dh, e.facing, e.animT, flash);
     ctx.restore();
     return;
   }
-  const dw = 48;
-  const dh = 52;
-  ctx.save();
-  if (flash) ctx.globalAlpha = 0.7 + Math.sin(time * 40) * 0.3;
+
+  if (e.type === "drone") {
+    paintDrone(ctx, x, y, e, time, flash);
+    ctx.restore();
+    return;
+  }
+
+  if (e.type === "sniper" && e.aiming && e.aimT > 0) {
+    // telegraph laser toward standing torso height
+    const feet = e.y + e.h; // not used
+    const sx = x + e.w / 2 + e.facing * 12;
+    const sy = y + e.h * 0.35;
+    ctx.strokeStyle = `rgba(57,255,154,${0.35 + Math.sin(time * 30) * 0.25})`;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx + e.facing * 500, sy + e.facing * 0); // mostly horizontal; aim is baked at fire
+    // better: draw long line in facing dir slightly down
+    ctx.lineTo(sx + e.facing * 480, sy + 20);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  const dw = e.type === "heavy" ? 56 : 50;
+  const dh = e.type === "heavy" ? 60 : 54;
   ctx.translate(x + e.w / 2 - dw / 2, y + e.h - dh + 2);
-  paintGrunt(ctx, dw, dh, e.type === "shooter" ? "shooter" : "grunt", e.facing, e.animT, flash);
+  paintUnit(ctx, dw, dh, e, time, flash);
   ctx.restore();
+}
+
+function paintUnit(ctx, W, H, e, time, flash) {
+  const kind = e.type;
+  ctx.save();
+  ctx.translate(W / 2, H);
+  ctx.scale(e.facing, 1);
+  const t = e.animT;
+  const walk = (kind === "grunt" || kind === "rusher" || kind === "bomber" || kind === "shield" || kind === "heavy") ? t * (kind === "rusher" && e.charging ? 22 : 11) : t * 3;
+  const bob = Math.abs(Math.sin(walk)) * (kind === "heavy" ? 1 : 2);
+  const swing = Math.sin(walk) * (kind === "heavy" ? 5 : 8);
+
+  // shadow
+  ctx.fillStyle = "rgba(40,10,20,0.28)";
+  ctx.beginPath();
+  ctx.ellipse(0, -1, kind === "heavy" ? 16 : 12, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // hopper squash/stretch
+  let sy = 1, sx = 1;
+  if (kind === "hopper") {
+    if (!e.onGround) {
+      sy = 1.15;
+      sx = 0.88;
+    } else {
+      sy = 0.92 + Math.abs(Math.sin(t * 8)) * 0.05;
+    }
+  }
+  ctx.scale(sx, sy);
+
+  const hopY = kind === "hopper" && !e.onGround ? -4 : 0;
+
+  // legs
+  const legCol = kind === "heavy" ? "#2a3040" : "#3a1520";
+  limb(ctx, -5, -16 + bob + hopY, -5 + swing * 0.6, -2 + hopY, kind === "heavy" ? 7 : 5.5, legCol);
+  limb(ctx, 5, -16 + bob + hopY, 5 - swing * 0.6, -2 + hopY, kind === "heavy" ? 7 : 5.5, shade(legCol, 0.1));
+
+  // body color by type
+  const colors = {
+    grunt: "#d43b55",
+    shooter: "#d47820",
+    heavy: "#6b7c93",
+    rusher: "#ff6b35",
+    bomber: "#c4a035",
+    sniper: "#3d8b7a",
+    shield: "#5b8def",
+    hopper: "#9b59b6",
+  };
+  const col = colors[kind] || "#d43b55";
+  const bw = kind === "heavy" ? 26 : 20;
+  const bh = kind === "heavy" ? 24 : 20;
+  const body = ctx.createLinearGradient(-bw / 2, -36, bw / 2, -14);
+  body.addColorStop(0, flash ? "#fff" : shade(col, -0.25));
+  body.addColorStop(0.5, flash ? "#fff" : col);
+  body.addColorStop(1, flash ? "#eee" : shade(col, -0.35));
+  ctx.fillStyle = body;
+  roundRectPath(ctx, -bw / 2, -36 + bob + hopY, bw, bh, 5);
+  ctx.fill();
+
+  // type extras
+  if (kind === "shield") {
+    // frontal energy shield
+    ctx.fillStyle = "rgba(100, 180, 255, 0.35)";
+    ctx.strokeStyle = "rgba(120, 200, 255, 0.8)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(14, -26 + bob, 6, 16, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  if (kind === "heavy") {
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    roundRectPath(ctx, -12, -34 + bob, 24, 6, 2);
+    ctx.fill();
+    ctx.fillStyle = "#8899aa";
+    ctx.fillRect(-8, -28 + bob, 16, 3);
+  }
+  if (kind === "rusher" && e.charging) {
+    ctx.strokeStyle = "rgba(255,120,40,0.6)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-18 - i * 6, -20 - i * 2);
+      ctx.lineTo(-10 - i * 4, -20 - i * 2);
+      ctx.stroke();
+    }
+  }
+  if (kind === "bomber") {
+    // backpack bomb
+    ctx.fillStyle = "#5a4010";
+    roundRectPath(ctx, -14, -32 + bob, 8, 10, 2);
+    ctx.fill();
+    ctx.fillStyle = "#ff3b5c";
+    ctx.beginPath();
+    ctx.arc(-10, -34 + bob, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (kind === "sniper") {
+    ctx.fillStyle = "#2a2a2a";
+    roundRectPath(ctx, 6, -30 + bob, 18, 4, 1);
+    ctx.fill();
+    ctx.fillStyle = "#39ff9a";
+    ctx.fillRect(22, -29 + bob, 3, 2);
+  }
+
+  // head
+  const skin = ctx.createRadialGradient(-1, -44 + bob + hopY, 1, 0, -42 + bob + hopY, 8);
+  skin.addColorStop(0, "#e8c4b0");
+  skin.addColorStop(1, "#a87860");
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.arc(0, -42 + bob + hopY, kind === "heavy" ? 9 : 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#1a0508";
+  roundRectPath(ctx, 0, -44 + bob + hopY, 7, 4, 1);
+  ctx.fill();
+  ctx.fillStyle = kind === "sniper" ? "#39ff9a" : "#ff3040";
+  ctx.shadowColor = ctx.fillStyle;
+  ctx.shadowBlur = 6;
+  ctx.fillRect(3, -43 + bob + hopY, 3, 2);
+  ctx.shadowBlur = 0;
+
+  if (kind === "shooter") {
+    const kick = Math.sin(t * 2) > 0.85 ? 3 : 0;
+    ctx.fillStyle = "#444";
+    roundRectPath(ctx, 6 - kick, -28 + bob, 16, 5, 1);
+    ctx.fill();
+    ctx.fillStyle = "#ff9f1a";
+    ctx.fillRect(20 - kick, -27 + bob, 4, 3);
+  } else if (kind === "grunt" || kind === "rusher" || kind === "hopper") {
+    limb(ctx, 8, -30 + bob + hopY, 13, -22 + bob + hopY - swing * 0.3, 4, "#c09080");
+  }
+
+  ctx.restore();
+}
+
+function paintDrone(ctx, x, y, e, time, flash) {
+  const cx = x + e.w / 2;
+  const cy = y + e.h / 2;
+  const bob = Math.sin(e.animT * 6) * 2;
+  // rotor blur
+  ctx.strokeStyle = "rgba(26, 188, 156, 0.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 8 + bob, 16, 3, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // body
+  const g = ctx.createRadialGradient(cx - 3, cy - 2 + bob, 2, cx, cy + bob, 14);
+  g.addColorStop(0, flash ? "#fff" : "#7dffe0");
+  g.addColorStop(0.5, flash ? "#eee" : "#1abc9c");
+  g.addColorStop(1, "#0a5a4a");
+  ctx.fillStyle = g;
+  ctx.shadowColor = "#1abc9c";
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + bob, 14, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // eye
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(cx + e.facing * 4, cy + bob, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ff3b5c";
+  ctx.beginPath();
+  ctx.arc(cx + e.facing * 5, cy + bob, 2, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // ─── Bosses ─────────────────────────────────────────────
@@ -880,13 +1150,24 @@ export function drawBulletLive(ctx, x, y, b) {
     ctx.fill();
     ctx.fillStyle = "#fff";
     ctx.fillRect(-4, -2, 8, 4);
+  } else if (b.bomb) {
+    const g = ctx.createRadialGradient(-2, -2, 1, 0, 0, 8);
+    g.addColorStop(0, "#fff4c0");
+    g.addColorStop(0.5, b.color);
+    g.addColorStop(1, "#5a3010");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ff3b5c";
+    ctx.fillRect(-1, -9, 2, 4);
   } else if (!b.friendly) {
     const g = ctx.createRadialGradient(-1, -1, 0, 0, 0, b.w / 2 + 1);
     g.addColorStop(0, "#fff");
     g.addColorStop(1, b.color);
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(0, 0, b.w / 2, 0, Math.PI * 2);
+    ctx.arc(0, 0, b.w / 2 + (b.sniper ? 1 : 0), 0, Math.PI * 2);
     ctx.fill();
   } else {
     const g = ctx.createLinearGradient(-10, 0, 10, 0);

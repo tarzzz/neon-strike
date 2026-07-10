@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # NEON STRIKE — local static server
 # Usage: ./serve.sh {start|stop|restart|status|open|deps}
+#
+# start / open / restart always run dependency install/check first
+# (python3 required; curl & lsof installed when possible).
 
 set -euo pipefail
 
@@ -10,8 +13,8 @@ LOG_FILE="$ROOT/.server.log"
 PORT="${PORT:-8080}"
 HOST="${HOST:-127.0.0.1}"
 URL="http://${HOST}:${PORT}"
-# Set SKIP_DEPS=1 to skip dependency checks/installs
 SKIP_DEPS="${SKIP_DEPS:-0}"
+DEPS_QUIET="${DEPS_QUIET:-0}"
 
 cd "$ROOT"
 
@@ -19,6 +22,12 @@ cd "$ROOT"
 
 have() {
   command -v "$1" >/dev/null 2>&1
+}
+
+log() {
+  if [[ "$DEPS_QUIET" != "1" ]]; then
+    echo "$@"
+  fi
 }
 
 os_id() {
@@ -29,9 +38,19 @@ os_id() {
   esac
 }
 
+refresh_brew_path() {
+  if [[ "$(os_id)" != "macos" ]]; then
+    return 0
+  fi
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+  hash -r 2>/dev/null || true
+}
+
 pkg_install() {
-  # Install package name(s) via the system package manager.
-  # Args: brew_name apt_name [dnf_name]
   local brew_pkg="$1"
   local apt_pkg="${2:-$1}"
   local dnf_pkg="${3:-$apt_pkg}"
@@ -40,12 +59,15 @@ pkg_install() {
 
   if [[ "$os" == "macos" ]]; then
     if ! have brew; then
-      echo "error: Homebrew is not installed."
-      echo "  Install it from https://brew.sh  then re-run: $0 deps"
+      echo "error: Homebrew is not installed (needed to auto-install $brew_pkg)."
+      echo "  Install from https://brew.sh then re-run: $0 deps"
       return 1
     fi
+    refresh_brew_path
     echo "→ brew install $brew_pkg"
+    # brew install is idempotent if already present
     brew install "$brew_pkg"
+    refresh_brew_path
     return $?
   fi
 
@@ -54,10 +76,10 @@ pkg_install() {
       echo "→ installing $apt_pkg (apt)"
       if have sudo && [[ "$(id -u)" -ne 0 ]]; then
         sudo apt-get update -qq
-        sudo apt-get install -y "$apt_pkg"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$apt_pkg"
       else
         apt-get update -qq
-        apt-get install -y "$apt_pkg"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y "$apt_pkg"
       fi
       return $?
     fi
@@ -82,7 +104,6 @@ pkg_install() {
   fi
 
   echo "error: no supported package manager found to install '$brew_pkg'."
-  echo "  Please install it manually, then re-run."
   return 1
 }
 
@@ -94,21 +115,13 @@ ensure_cmd() {
   local required="${4:-1}"
 
   if have "$cmd"; then
-    echo "  ✓ $cmd ($(command -v "$cmd"))"
+    log "  ✓ $cmd ($(command -v "$cmd"))"
     return 0
   fi
 
   echo "  ✗ $cmd missing — installing…"
   if pkg_install "$brew_pkg" "$apt_pkg"; then
-    # Refresh PATH for brew on macOS (Apple Silicon / Intel)
-    if [[ "$(os_id)" == "macos" ]]; then
-      if [[ -x /opt/homebrew/bin/brew ]]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-      elif [[ -x /usr/local/bin/brew ]]; then
-        eval "$(/usr/local/bin/brew shellenv)"
-      fi
-    fi
-    hash -r 2>/dev/null || true
+    refresh_brew_path
     if have "$cmd"; then
       echo "  ✓ $cmd installed ($(command -v "$cmd"))"
       return 0
@@ -117,6 +130,7 @@ ensure_cmd() {
 
   if [[ "$required" == "1" ]]; then
     echo "error: required dependency '$cmd' is not available."
+    echo "  Install it manually, then re-run: $0 deps"
     return 1
   fi
   echo "  ! optional dependency '$cmd' still missing (continuing)"
@@ -124,42 +138,64 @@ ensure_cmd() {
 }
 
 ensure_python_http() {
-  # Confirm python3 can run the stdlib HTTP server module.
+  if ! have python3; then
+    return 1
+  fi
   if ! python3 -c "import http.server, socketserver" 2>/dev/null; then
-    echo "error: python3 is present but the http.server stdlib module failed to import."
+    echo "error: python3 is present but http.server failed to import."
+    echo "  Try reinstalling Python 3, then: $0 deps"
     return 1
   fi
   local ver
   ver="$(python3 -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null || echo "?")"
-  echo "  ✓ python3 http.server (Python $ver)"
+  log "  ✓ python3 http.server (Python $ver)"
+}
+
+ensure_project_files() {
+  local missing=0
+  local f
+  for f in index.html js/main.js js/game.js js/gfx.js css/style.css; do
+    if [[ ! -f "$ROOT/$f" ]]; then
+      echo "  ✗ missing project file: $f"
+      missing=1
+    fi
+  done
+  if [[ "$missing" -ne 0 ]]; then
+    echo "error: project files incomplete — re-clone or restore the repo."
+    return 1
+  fi
+  log "  ✓ project files present"
 }
 
 cmd_deps() {
   echo "Checking NEON STRIKE dependencies…"
   echo
 
-  # Required: python3 (static file server)
+  ensure_project_files || return 1
+
+  # Required runtime
   ensure_cmd python3 python python3 1 || return 1
   ensure_python_http || return 1
 
-  # Helpful for readiness checks (optional but installed when possible)
+  # Optional but useful for health checks / port detection
   ensure_cmd curl curl curl 0 || true
-
-  # Used for port detection on macOS/Linux (usually preinstalled)
   ensure_cmd lsof lsof lsof 0 || true
 
   echo
   echo "Dependencies OK."
-  echo "  No npm/node packages required — the game is pure HTML/CSS/JS."
+  echo "  No npm/node packages required — pure HTML/CSS/JS."
+  echo "  Start with: $0 start   or   $0 open"
 }
 
 ensure_deps() {
   if [[ "$SKIP_DEPS" == "1" ]]; then
-    echo "Skipping dependency check (SKIP_DEPS=1)."
+    echo "Skipping dependency install (SKIP_DEPS=1)."
+    ensure_project_files || return 1
     if ! have python3; then
       echo "error: python3 is still required even with SKIP_DEPS=1."
       return 1
     fi
+    ensure_python_http || return 1
     return 0
   fi
   cmd_deps
@@ -201,6 +237,7 @@ http_ready() {
 # ─── Commands ────────────────────────────────────────────
 
 cmd_start() {
+  # Always install/check deps before serving
   ensure_deps || return 1
   echo
 
@@ -224,7 +261,7 @@ cmd_start() {
   disown "$pid" 2>/dev/null || true
 
   local i
-  for i in $(seq 1 30); do
+  for i in $(seq 1 40); do
     if ! kill -0 "$pid" 2>/dev/null; then
       echo "Server process exited. Last log lines:"
       tail -n 20 "$LOG_FILE" 2>/dev/null || true
@@ -294,6 +331,7 @@ cmd_status() {
 }
 
 cmd_open() {
+  # open always goes through start → deps install
   if ! is_running; then
     echo "Server is not running. Starting it…"
     cmd_start || return 1
@@ -320,12 +358,12 @@ NEON STRIKE server
 Usage:
   $0 start      Install deps if needed, then start server (port ${PORT})
   $0 stop       Stop the server
-  $0 restart    Restart the server
+  $0 restart    Restart the server (re-checks deps)
   $0 status     Show running state
   $0 open       Start (if needed) and open in browser
   $0 deps       Only check / install dependencies
 
-Dependencies (auto-installed when missing):
+Dependencies (auto-installed when missing on start/open/restart/deps):
   python3       Required — serves the game (stdlib http.server)
   curl          Optional — health check after start
   lsof          Optional — port-in-use detection

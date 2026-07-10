@@ -14,11 +14,15 @@ const KEYMAP = {
   up: ["ArrowUp", "w", "W"],
   down: ["ArrowDown", "s", "S"],
   jump: [" ", "Space", "ArrowUp", "w", "W"],
-  // Primary: J fire, K switch (also Z / X special, click fire)
+  // J / Z / click = forward fire
   fire: ["j", "J", "z", "Z"],
-  special: ["x", "X"],
+  // E = diagonal up · X = diagonal down
+  fireUp: ["e", "E"],
+  fireDown: ["x", "X"],
+  // special moved off X
+  special: ["c", "C"],
   pause: ["p", "P", "Escape"],
-  nextWeapon: ["k", "K", "e", "E", "]"],
+  nextWeapon: ["k", "K", "]"],
   prevWeapon: ["q", "Q", "["],
 };
 
@@ -106,4 +110,20 @@ export function getMouse() {
 
 export function isFiring() {
   return isDown("fire") || mouse.down;
+}
+
+/** Any fire input including diagonal E / X */
+export function isAnyFire() {
+  return isFiring() || isDown("fireUp") || isDown("fireDown");
+}
+
+/**
+ * Aim mode for shots:
+ *   "up" | "down" | "forward"
+ * E / fireUp wins over X when both held; E/X win over plain J.
+ */
+export function getFireAim() {
+  if (isDown("fireUp")) return "up";
+  if (isDown("fireDown")) return "down";
+  return "forward";
 }
