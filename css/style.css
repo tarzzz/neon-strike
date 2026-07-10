@@ -144,8 +144,7 @@ html, body {
   height: 100%;
   object-fit: contain;
   background: #9ec5e8;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
+  image-rendering: auto;
 }
 
 .screen {

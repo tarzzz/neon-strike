@@ -36,11 +36,22 @@ const ui = {
   btnFullscreen: document.getElementById("btn-fullscreen"),
 };
 
-// Logical resolution stays fixed for consistent gameplay
+// Logical resolution stays fixed for consistent gameplay;
+// DPR scaling keeps vectors sharp without changing physics.
 const LOGICAL_W = 960;
 const LOGICAL_H = 540;
-canvas.width = LOGICAL_W;
-canvas.height = LOGICAL_H;
+const ctx = canvas.getContext("2d");
+
+function fitCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(LOGICAL_W * dpr);
+  canvas.height = Math.floor(LOGICAL_H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+}
+fitCanvas();
+window.addEventListener("resize", fitCanvas);
 
 initInput(canvas);
 const game = new Game(canvas, ui);

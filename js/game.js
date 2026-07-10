@@ -3,6 +3,17 @@ import { isDown, justPressed, justPressedKey, isFiring, anyKeyPressed, endFrameI
 import { sfx, unlockAudio } from "./audio.js";
 import { ParticleSystem } from "./particles.js";
 import { getLevel } from "./levels.js";
+import {
+  drawPlayerLive,
+  drawEnemyLive,
+  drawBossLive,
+  drawPlatformLive,
+  drawPickupLive,
+  drawBulletLive,
+  drawSoftCloud,
+  drawSun,
+  roundRectPath,
+} from "./gfx.js";
 
 const W = 960;
 const H = 540;
@@ -1333,6 +1344,8 @@ export class Game {
   // ─── Draw ─────────────────────────────────────────────
   draw() {
     const ctx = this.ctx;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
     ctx.save();
     // screen shake
     if (this.shake > 0) {
@@ -1376,15 +1389,7 @@ export class Game {
     g.addColorStop(1, "#e4f2fb");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
-    // sun
-    ctx.fillStyle = "rgba(255, 230, 140, 0.9)";
-    ctx.shadowColor = "rgba(255, 200, 80, 0.6)";
-    ctx.shadowBlur = 40;
-    ctx.beginPath();
-    ctx.arc(W * 0.82, H * 0.18, 36, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    // clouds
+    drawSun(ctx, W * 0.82, H * 0.18, 34);
     this.drawClouds(ctx, 0.2);
     // city silhouette (light day buildings)
     for (let i = 0; i < 18; i++) {
@@ -1407,7 +1412,7 @@ export class Game {
     ctx.moveTo(0, H - 40);
     ctx.lineTo(W, H - 40);
     ctx.stroke();
-    drawCommando(ctx, W * 0.5 - 14, H - 40 - 46, 28, 46, 1, "idle", this.time, false, { weaponColor: "#0a7ea4" });
+    drawPlayerLive(ctx, W * 0.5 - 14, H - 40 - 46, 28, 46, 1, "idle", this.time, { weaponColor: "#2ec4ff" });
   }
 
   drawBackground(ctx) {
@@ -1427,25 +1432,7 @@ export class Game {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
-    // sun (parallax)
-    const sunX = W * 0.78 - this.cam.x * 0.02;
-    const sunY = H * 0.14;
-    ctx.fillStyle = "rgba(255, 236, 160, 0.95)";
-    ctx.shadowColor = "rgba(255, 200, 90, 0.55)";
-    ctx.shadowBlur = 50;
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, 32, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    // soft sun glow
-    const sg = ctx.createRadialGradient(sunX, sunY, 10, sunX, sunY, 90);
-    sg.addColorStop(0, "rgba(255, 230, 150, 0.35)");
-    sg.addColorStop(1, "rgba(255, 230, 150, 0)");
-    ctx.fillStyle = sg;
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, 90, 0, Math.PI * 2);
-    ctx.fill();
-
+    drawSun(ctx, W * 0.78 - this.cam.x * 0.02, H * 0.14, 30);
     if (bg.clouds !== false) this.drawClouds(ctx, 0.08);
 
     if (bg.buildings) {
@@ -1465,16 +1452,11 @@ export class Game {
 
   drawClouds(ctx, parallax = 0.1) {
     const off = this.cam.x * parallax + this.time * 8;
-    ctx.fillStyle = "rgba(255, 255, 255, 0.72)";
     for (let i = 0; i < 8; i++) {
       const x = ((i * 160 - off) % (W + 140)) - 60;
       const y = 40 + (i * 37) % 120;
-      const s = 0.7 + (i % 3) * 0.25;
-      ctx.beginPath();
-      ctx.ellipse(x, y, 36 * s, 14 * s, 0, 0, Math.PI * 2);
-      ctx.ellipse(x + 22 * s, y + 2, 28 * s, 12 * s, 0, 0, Math.PI * 2);
-      ctx.ellipse(x - 18 * s, y + 4, 24 * s, 10 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
+      const s = 0.75 + (i % 3) * 0.28;
+      drawSoftCloud(ctx, x, y, s);
     }
   }
 
@@ -1535,7 +1517,7 @@ export class Game {
       const sx = p.x - cam.x;
       const sy = p.y - cam.y;
       if (sx + p.w < -20 || sx > W + 20) continue;
-      drawPlatform(ctx, sx, sy, p.w, p.h, p);
+      drawPlatformLive(ctx, sx, sy, p.w, p.h, p);
     }
 
     // pickups
@@ -1544,7 +1526,7 @@ export class Game {
       const sx = item.x - cam.x;
       const sy = item.y - cam.y + Math.sin(item.bob) * 4;
       if (sx < -30 || sx > W + 30) continue;
-      drawPickup(ctx, sx, sy, item, this.time);
+      drawPickupLive(ctx, sx, sy, item);
     }
 
     // enemies
@@ -1553,7 +1535,7 @@ export class Game {
       const sx = e.x - cam.x;
       const sy = e.y - cam.y;
       if (sx < -60 || sx > W + 60) continue;
-      drawEnemy(ctx, sx, sy, e, this.time);
+      drawEnemyLive(ctx, sx, sy, e, this.time);
     }
 
     // boss
@@ -1561,12 +1543,12 @@ export class Game {
       const b = this.boss;
       const sx = b.x - cam.x;
       const sy = b.y - cam.y;
-      if (b.alive) drawBoss(ctx, sx, sy, b, this.time);
+      if (b.alive) drawBossLive(ctx, sx, sy, b, this.time);
     }
 
     // bullets
-    for (const b of this.bullets) drawBullet(ctx, b.x - cam.x, b.y - cam.y, b);
-    for (const b of this.enemyBullets) drawBullet(ctx, b.x - cam.x, b.y - cam.y, b);
+    for (const b of this.bullets) drawBulletLive(ctx, b.x - cam.x, b.y - cam.y, b);
+    for (const b of this.enemyBullets) drawBulletLive(ctx, b.x - cam.x, b.y - cam.y, b);
 
     // player
     if (this.player?.alive) {
@@ -1576,7 +1558,7 @@ export class Game {
       const blink = p.invuln > 0 && Math.floor(this.time * 20) % 2 === 0;
       if (!blink) {
         const wcol = WEAPONS[p.weapon]?.color || "#00f0ff";
-        drawCommando(ctx, sx, sy, p.w, p.h, p.facing, p.anim, p.animT, false, {
+        drawPlayerLive(ctx, sx, sy, p.w, p.h, p.facing, p.anim, p.animT, {
           recoil: p.recoil,
           landSquash: p.landSquash,
           muzzleFlash: p.muzzleFlash,
