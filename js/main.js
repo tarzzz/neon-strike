@@ -34,6 +34,11 @@ const ui = {
   btnMenu: document.getElementById("btn-menu"),
   btnWinMenu: document.getElementById("btn-win-menu"),
   btnFullscreen: document.getElementById("btn-fullscreen"),
+  btnContinue: document.getElementById("btn-continue"),
+  btnSave: document.getElementById("btn-save"),
+  btnLoad: document.getElementById("btn-load"),
+  saveSummary: document.getElementById("save-summary"),
+  pauseSaveMsg: document.getElementById("pause-save-msg"),
 };
 
 // Logical resolution stays fixed for consistent gameplay;
@@ -69,10 +74,13 @@ function toggleFullscreen() {
 ui.btnFullscreen?.addEventListener("click", toggleFullscreen);
 window.addEventListener("keydown", (e) => {
   if (e.key === "f" || e.key === "F") {
-    // don't steal when typing (n/a) — toggle FS
     if (e.target === document.body || e.target === document.documentElement || e.target === canvas) {
       toggleFullscreen();
     }
+  }
+  // Keep save/load keys from triggering browser refresh/actions
+  if (e.key === "F5" || e.key === "F9") {
+    e.preventDefault();
   }
 });
 

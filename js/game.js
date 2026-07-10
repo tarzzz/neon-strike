@@ -3,6 +3,7 @@ import { isDown, justPressed, justPressedKey, isFiring, isAnyFire, getFireAim, a
 import { sfx, unlockAudio } from "./audio.js";
 import { ParticleSystem } from "./particles.js";
 import { getLevel } from "./levels.js";
+import { hasSave, readRaw, writeSave, clearSave, formatSaveSummary } from "./save.js";
 import {
   drawPlayerLive,
   drawEnemyLive,
@@ -10,6 +11,7 @@ import {
   drawPlatformLive,
   drawPickupLive,
   drawBulletLive,
+  drawScenery,
   drawSoftCloud,
   drawSun,
   roundRectPath,
@@ -208,8 +210,10 @@ export class Game {
     this.floatingTexts = [];
     this.checkpoint = 0;
     this.introReady = false;
+    this._saveMsgTimer = 0;
 
     this._bindUI();
+    this.refreshContinueButton();
   }
 
   _bindUI() {
@@ -234,9 +238,11 @@ export class Game {
     });
     ui.btnQuit?.addEventListener("click", () => {
       sfx.ui();
+      // keep last save; offer continue
       this.state = "title";
       this.showScreen("title");
       this.ui.hud?.classList.add("hidden");
+      this.refreshContinueButton();
     });
     ui.btnRetry?.addEventListener("click", () => {
       unlockAudio();
@@ -248,13 +254,211 @@ export class Game {
       this.state = "title";
       this.showScreen("title");
       this.ui.hud?.classList.add("hidden");
+      this.refreshContinueButton();
     });
     ui.btnWinMenu?.addEventListener("click", () => {
       sfx.ui();
       this.state = "title";
       this.showScreen("title");
       this.ui.hud?.classList.add("hidden");
+      this.refreshContinueButton();
     });
+    ui.btnContinue?.addEventListener("click", () => {
+      unlockAudio();
+      sfx.ui();
+      if (!this.loadGame()) {
+        this.setSaveMsg("No save data found.", true);
+      }
+    });
+    ui.btnSave?.addEventListener("click", () => {
+      sfx.ui();
+      if (this.saveGame()) this.setSaveMsg("Game saved.", false);
+      else this.setSaveMsg("Save failed.", true);
+    });
+    ui.btnLoad?.addEventListener("click", () => {
+      sfx.ui();
+      if (this.loadGame()) {
+        this.setSaveMsg("Game loaded.", false);
+      } else {
+        this.setSaveMsg("No save data found.", true);
+      }
+    });
+  }
+
+  setSaveMsg(text, isError = false) {
+    const el = this.ui.pauseSaveMsg;
+    if (el) {
+      el.textContent = text;
+      el.style.color = isError ? "var(--red)" : "var(--cyan)";
+    }
+    // also float in-game
+    if (this.player && this.state === "play") {
+      this.floatText(this.player.x, this.player.y - 50, text, isError ? "#ff3b5c" : "#00f0ff");
+    }
+  }
+
+  refreshContinueButton() {
+    const data = readRaw();
+    const btn = this.ui.btnContinue;
+    const sum = this.ui.saveSummary;
+    if (btn) {
+      if (data) {
+        btn.classList.remove("hidden");
+        btn.textContent = "CONTINUE";
+      } else {
+        btn.classList.add("hidden");
+      }
+    }
+    if (sum) {
+      if (data) {
+        sum.classList.remove("hidden");
+        sum.textContent = formatSaveSummary(data);
+      } else {
+        sum.classList.add("hidden");
+        sum.textContent = "";
+      }
+    }
+  }
+
+  /** Snapshot current run into localStorage */
+  serializeSave() {
+    if (!this.level || !this.player) return null;
+    const p = this.player;
+    return {
+      score: this.score,
+      lives: this.lives,
+      levelIndex: this.levelIndex,
+      checkpoint: this.checkpoint,
+      bossActive: !!this.bossActive,
+      bossHp: this.boss?.alive ? this.boss.hp : 0,
+      bossAlive: !!(this.boss && this.boss.alive),
+      player: {
+        x: p.x,
+        y: p.y,
+        hp: p.hp,
+        energy: p.energy,
+        weapon: p.weapon,
+        owned: { ...p.owned },
+        ammo: { ...p.ammo },
+        facing: p.facing,
+      },
+      enemiesAlive: this.enemies.map((e) => !!e.alive),
+      enemyHp: this.enemies.map((e) => e.hp),
+      pickupsAlive: this.pickups.map((item) => !!item.alive),
+    };
+  }
+
+  saveGame() {
+    // Allow save during active run states
+    if (!["play", "pause", "intro", "dead"].includes(this.state)) {
+      return false;
+    }
+    if (!this.player || !this.level) return false;
+    // When paused, still save mid-level state
+    if (this.state === "intro" && this.player) {
+      // at drop-in: still fine
+    }
+    const data = this.serializeSave();
+    if (!data) return false;
+    const ok = writeSave(data);
+    if (ok) this.refreshContinueButton();
+    return ok;
+  }
+
+  loadGame() {
+    const data = readRaw();
+    if (!data) return false;
+
+    unlockAudio();
+    this.score = data.score ?? 0;
+    this.lives = data.lives ?? 3;
+    this.levelIndex = data.levelIndex ?? 0;
+    this.arsenalCarry = data.player
+      ? {
+          owned: { ...(data.player.owned || {}) },
+          ammo: { ...(data.player.ammo || {}) },
+          weapon: data.player.weapon || "blaster",
+        }
+      : null;
+
+    if (!this.loadLevel(this.levelIndex)) return false;
+
+    // restore player
+    const p = this.player;
+    const sp = data.player || {};
+    applyArsenal(p, {
+      owned: sp.owned || { blaster: true },
+      ammo: sp.ammo || {},
+      weapon: sp.weapon || "blaster",
+    });
+    if (typeof sp.hp === "number") p.hp = Math.max(1, Math.min(p.maxHp, sp.hp));
+    if (typeof sp.energy === "number") p.energy = Math.max(0, Math.min(p.maxEnergy, sp.energy));
+    if (typeof sp.facing === "number") p.facing = sp.facing || 1;
+
+    // position: prefer saved coords, else checkpoint
+    this.checkpoint = data.checkpoint ?? this.level.playerStart.x;
+    if (typeof sp.x === "number" && typeof sp.y === "number") {
+      // un-prone then place
+      if (p.prone) setPlayerProne(p, false);
+      p.x = sp.x;
+      p.y = sp.y;
+      p.w = STAND_W;
+      p.h = STAND_H;
+      p.prone = false;
+    } else {
+      p.x = this.checkpoint;
+      p.y = this.level.playerStart.y;
+    }
+    p.invuln = 1.5;
+    p.alive = true;
+    p.vx = 0;
+    p.vy = 0;
+
+    // enemies / pickups
+    if (Array.isArray(data.enemiesAlive)) {
+      this.enemies.forEach((e, i) => {
+        if (data.enemiesAlive[i] === false) {
+          e.alive = false;
+        } else if (typeof data.enemyHp?.[i] === "number") {
+          e.hp = data.enemyHp[i];
+          e.alive = e.hp > 0;
+        }
+      });
+    }
+    if (Array.isArray(data.pickupsAlive)) {
+      this.pickups.forEach((item, i) => {
+        if (data.pickupsAlive[i] === false) item.alive = false;
+      });
+    }
+
+    // boss
+    this.bossActive = !!data.bossActive;
+    if (this.boss) {
+      if (data.bossAlive === false) {
+        this.boss.alive = false;
+        this.boss.hp = 0;
+      } else if (typeof data.bossHp === "number" && data.bossHp > 0) {
+        this.boss.hp = Math.min(this.boss.maxHp, data.bossHp);
+        this.boss.alive = true;
+        this.boss.intro = 0;
+      }
+    }
+
+    this.bullets = [];
+    this.enemyBullets = [];
+    this.floatingTexts = [];
+    this.shake = 0;
+    this.flash = 0;
+    this.cam.x = Math.max(0, p.x - W * 0.35);
+    this.cam.y = 0;
+
+    this.state = "play";
+    this.showScreen(null);
+    this.ui.hud?.classList.remove("hidden");
+    this.updateHUD();
+    this.floatText(p.x, p.y - 40, "LOADED", "#39ff9a");
+    this.refreshContinueButton();
+    return true;
   }
 
   showScreen(name) {
@@ -275,6 +479,9 @@ export class Game {
   }
 
   startGame() {
+    // New run — wipe previous save so Continue matches reality
+    clearSave();
+    this.refreshContinueButton();
     this.score = 0;
     this.lives = 3;
     this.levelIndex = 0;
@@ -364,6 +571,7 @@ export class Game {
         sfx.level();
         this.state = "play";
         this.showScreen(null);
+        this.saveGame(); // auto-save at level start
       }
       endFrameInput();
       return;
@@ -398,6 +606,8 @@ export class Game {
           this.state = "win";
           if (this.ui.winScore) this.ui.winScore.textContent = `FINAL SCORE: ${padScore(this.score)}`;
           this.showScreen("win");
+          clearSave();
+          this.refreshContinueButton();
         }
       }
       endFrameInput();
@@ -408,6 +618,23 @@ export class Game {
       if (justPressed("pause")) {
         this.state = "play";
         this.showScreen(null);
+      }
+      if (justPressedKey("F5")) {
+        if (this.saveGame()) this.setSaveMsg("Game saved (F5).", false);
+        else this.setSaveMsg("Save failed.", true);
+      }
+      if (justPressedKey("F9")) {
+        if (this.loadGame()) this.setSaveMsg("Game loaded (F9).", false);
+        else this.setSaveMsg("No save data.", true);
+      }
+      endFrameInput();
+      return;
+    }
+
+    if (this.state === "title" || this.state === "how") {
+      if (justPressedKey("F9")) {
+        unlockAudio();
+        if (this.loadGame()) sfx.ui();
       }
       endFrameInput();
       return;
@@ -421,8 +648,19 @@ export class Game {
     if (justPressed("pause")) {
       this.state = "pause";
       this.showScreen("pause");
+      if (this.ui.pauseSaveMsg) this.ui.pauseSaveMsg.textContent = "";
       endFrameInput();
       return;
+    }
+
+    // F5 save · F9 load
+    if (justPressedKey("F5")) {
+      if (this.saveGame()) this.setSaveMsg("Game saved (F5).", false);
+      else this.setSaveMsg("Cannot save here.", true);
+    }
+    if (justPressedKey("F9")) {
+      if (this.loadGame()) this.setSaveMsg("Game loaded (F9).", false);
+      else this.setSaveMsg("No save data.", true);
     }
 
     this.updatePlayer(dt);
@@ -643,7 +881,10 @@ export class Game {
 
     // checkpoints
     for (const cx of this.level.checkpoints) {
-      if (p.x >= cx && cx > this.checkpoint) this.checkpoint = cx;
+      if (p.x >= cx && cx > this.checkpoint) {
+        this.checkpoint = cx;
+        this.saveGame(); // auto-save at checkpoint
+      }
     }
 
     // boss trigger
@@ -848,26 +1089,40 @@ export class Game {
         b.life -= dt;
         // rocket exhaust trail
         if (b.rocket) {
-          this.particles.trail(
-            b.x + b.w / 2 - Math.sign(b.vx || 1) * 10,
-            b.y + b.h / 2 + (Math.random() - 0.5) * 3,
-            chance(0.5) ? "#ff9f1a" : "#ffe566",
-            3.5
-          );
-          if (chance(0.4)) {
-            this.particles.emit(b.x + b.w / 2, b.y + b.h / 2, {
-              count: 1,
-              colors: ["#555a66", "#ff6b1a"],
-              speed: 30,
-              life: 0.3,
-              size: 3,
-              gravity: -50,
+          const rx = b.x + b.w / 2 - Math.sign(b.vx || 1) * 12;
+          const ry = b.y + b.h / 2 + (Math.random() - 0.5) * 4;
+          this.particles.trail(rx, ry, chance(0.5) ? "#ff9f1a" : "#ffe566", 5);
+          this.particles.trail(rx, ry, "#ff3b5c", 3);
+          if (chance(0.65)) {
+            this.particles.emit(rx, ry, {
+              count: 2,
+              colors: ["#ff6b1a", "#ffe566", "#ff2244", "#555"],
+              speed: 50,
+              life: 0.35,
+              size: 3.5,
+              gravity: -60,
               kind: "smoke",
             });
           }
-        } else if (b.friendly && chance(0.35)) {
-          // faint bullet glow trail
-          this.particles.trail(b.x + b.w / 2, b.y + b.h / 2, b.color, 2);
+          if (chance(0.25)) {
+            this.particles.emit(rx, ry, {
+              count: 1,
+              colors: ["#fff", "#ffe566"],
+              speed: 20,
+              life: 0.15,
+              size: 2,
+              gravity: 0,
+              kind: "spark",
+            });
+          }
+        } else if (b.friendly) {
+          if (b.rail && chance(0.7)) {
+            this.particles.trail(b.x + b.w / 2, b.y + b.h / 2, "#e8f7ff", 3.5);
+          } else if (b.orb && chance(0.5)) {
+            this.particles.trail(b.x + b.w / 2, b.y + b.h / 2, b.color, 4);
+          } else if (chance(0.45)) {
+            this.particles.trail(b.x + b.w / 2, b.y + b.h / 2, b.color, 2.5);
+          }
         }
         const offscreen =
           b.life <= 0 ||
@@ -955,12 +1210,26 @@ export class Game {
 
   explode(x, y, radius, dmg, bullet = null) {
     const heavy = bullet?.antiTank || radius >= 80;
-    this.particles.burst(x, y, heavy ? "#ff2244" : "#ff2bd6");
-    this.particles.kill(x, y, heavy ? "#ff6b1a" : "#ff6b1a");
-    this.particles.ring(x, y, "#ffe566", heavy ? 0.45 : 0.32);
-    if (heavy) this.particles.ring(x, y, "#ff2244", 0.55);
-    this.shake = Math.max(this.shake, heavy ? 0.75 : 0.55);
-    this.flash = Math.max(this.flash, heavy ? 0.35 : 0.2);
+    const rocket = !!bullet?.rocket;
+    this.particles.burst(x, y, heavy ? "#ff2244" : rocket ? "#ff6b1a" : "#ff2bd6");
+    this.particles.kill(x, y, "#ff6b1a");
+    this.particles.burst(x, y, "#ffe566");
+    this.particles.ring(x, y, "#ffe566", heavy ? 0.5 : 0.38);
+    this.particles.ring(x, y, rocket ? "#ff6b1a" : "#ff2bd6", heavy ? 0.55 : 0.42);
+    if (heavy || rocket) {
+      this.particles.ring(x, y, "#fff", 0.28);
+      this.particles.emit(x, y, {
+        count: rocket ? 22 : 14,
+        colors: ["#ff3b5c", "#ff9f1a", "#ffe566", "#fff", "#333"],
+        speed: 280,
+        life: 0.55,
+        size: 4,
+        gravity: 200,
+        kind: "square",
+      });
+    }
+    this.shake = Math.max(this.shake, heavy ? 0.8 : rocket ? 0.65 : 0.55);
+    this.flash = Math.max(this.flash, heavy ? 0.4 : rocket ? 0.3 : 0.2);
     sfx.explode();
     for (const e of this.enemies) {
       if (!e.alive) continue;
@@ -1093,6 +1362,7 @@ export class Game {
         this.showScreen("clear");
         sfx.level();
         this.updateHUD();
+        this.saveGame(); // auto-save after boss
       }, 1200);
     }
   }
@@ -1582,31 +1852,18 @@ export class Game {
   }
 
   drawTitleBG(ctx) {
-    // daytime sky
-    const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, "#6eb0e0");
-    g.addColorStop(0.45, "#b8daf2");
-    g.addColorStop(1, "#e4f2fb");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
-    drawSun(ctx, W * 0.82, H * 0.18, 34);
-    this.drawClouds(ctx, 0.2);
-    // city silhouette (light day buildings)
-    for (let i = 0; i < 18; i++) {
-      const bx = ((i * 97 + this.time * 12) % (W + 80)) - 40;
-      const bh = 80 + ((i * 47) % 160);
-      ctx.fillStyle = i % 2 ? "#8aa4bc" : "#9bb0c6";
-      ctx.fillRect(bx, H - bh - 40, 50 + (i % 3) * 20, bh);
-      ctx.fillStyle = "rgba(255,255,255,0.35)";
-      for (let wy = H - bh + 10; wy < H - 50; wy += 16) {
-        for (let wx = 6; wx < 40; wx += 12) {
-          if ((wx + wy + i) % 4) ctx.fillRect(bx + wx, wy, 5, 7);
-        }
-      }
-    }
-    ctx.fillStyle = "#7a8fa0";
+    drawScenery(ctx, W, H, { x: this.time * 30, y: 0 }, this.time, {
+      scenery: "urban",
+      skyTop: "#6aa8e0",
+      skyBot: "#d4eaf8",
+      sun: true,
+      clouds: true,
+      farColor: "#9bb4c8",
+      midColor: "#7a96b0",
+    });
+    ctx.fillStyle = "rgba(80,100,120,0.85)";
     ctx.fillRect(0, H - 40, W, 40);
-    ctx.strokeStyle = "rgba(255, 200, 60, 0.7)";
+    ctx.strokeStyle = "rgba(255, 200, 60, 0.75)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(0, H - 40);
@@ -1622,37 +1879,13 @@ export class Game {
 
   drawBackground(ctx) {
     const bg = this.level?.bg || {
-      skyTop: "#7eb6e8",
-      skyBot: "#d6ebfa",
-      accent: "#e8a020",
-      secondary: "#4aa8d8",
-      buildings: true,
-      daytime: true,
+      scenery: "urban",
+      skyTop: "#6aa8e0",
+      skyBot: "#d4eaf8",
+      sun: true,
       clouds: true,
     };
-    const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, bg.skyTop);
-    g.addColorStop(0.55, bg.skyBot);
-    g.addColorStop(1, "#eef6fc");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
-
-    drawSun(ctx, W * 0.78 - this.cam.x * 0.02, H * 0.14, 30);
-    if (bg.clouds !== false) this.drawClouds(ctx, 0.08);
-
-    if (bg.buildings) {
-      this.drawBuildings(ctx, 0.12, 0.55, "#a8bdd0", 12);
-      this.drawBuildings(ctx, 0.28, 0.85, "#8fa8be", 8);
-    }
-    if (bg.pipes) {
-      this.drawPipes(ctx);
-    }
-
-    // warm haze near horizon
-    ctx.fillStyle = "rgba(255, 210, 140, 0.12)";
-    ctx.beginPath();
-    ctx.ellipse(W * 0.5, H * 0.72, 420, 70, 0, 0, Math.PI * 2);
-    ctx.fill();
+    drawScenery(ctx, W, H, this.cam, this.time, bg);
   }
 
   drawClouds(ctx, parallax = 0.1) {
@@ -1752,8 +1985,8 @@ export class Game {
     }
 
     // bullets
-    for (const b of this.bullets) drawBulletLive(ctx, b.x - cam.x, b.y - cam.y, b);
-    for (const b of this.enemyBullets) drawBulletLive(ctx, b.x - cam.x, b.y - cam.y, b);
+    for (const b of this.bullets) drawBulletLive(ctx, b.x - cam.x, b.y - cam.y, b, this.time);
+    for (const b of this.enemyBullets) drawBulletLive(ctx, b.x - cam.x, b.y - cam.y, b, this.time);
 
     // player
     if (this.player?.alive) {

@@ -49,9 +49,11 @@
         <p class="tagline">THEY TOOK THE CITY. TAKE IT BACK.</p>
         <div class="menu">
           <button id="btn-start" class="menu-btn primary">START MISSION</button>
+          <button id="btn-continue" class="menu-btn hidden">CONTINUE</button>
           <button id="btn-how" class="menu-btn">HOW TO PLAY</button>
         </div>
-        <p class="hint">Move WASD · Jump Space · <b>J</b> Fire → · <b>E</b> Fire ↗ · <b>X</b> Fire ↘ · <b>K</b> Switch · <b>C</b> Special</p>
+        <p id="save-summary" class="save-summary hidden"></p>
+        <p class="hint">Move WASD · Jump Space · <b>J</b> Fire → · <b>E</b> Fire ↗ · <b>X</b> Fire ↘ · <b>K</b> Switch · <b>C</b> Special · <b>F5</b> Save · <b>F9</b> Load</p>
       </div>
 
       <!-- How to play -->
@@ -69,6 +71,7 @@
           <li>Guns: <span class="pu r">R</span> Rapid · <span class="pu s">S</span> Spread · <span class="pu g">G</span> Shotgun · <span class="pu l">L</span> Laser · <span class="pu p">P</span> Plasma · <span class="pu b">B</span> Bazooka · <span class="pu a">A</span> Railgun · <span class="pu t">T</span> Tank-Buster · <span class="pu h">H</span> HP · <span class="pu e">E</span> Energy</li>
           <li>★ Heavy guns (Railgun / Tank-Buster) shred bosses, turrets, and armor.</li>
           <li>Clear each sector, then destroy the boss core.</li>
+          <li><kbd>F5</kbd> — Save game · <kbd>F9</kbd> — Load game (also on pause menu)</li>
         </ul>
         <button id="btn-how-back" class="menu-btn">BACK</button>
       </div>
@@ -84,7 +87,10 @@
       <!-- Pause -->
       <div id="screen-pause" class="screen hidden">
         <h2>PAUSED</h2>
+        <p id="pause-save-msg" class="save-msg"></p>
         <button id="btn-resume" class="menu-btn primary">RESUME</button>
+        <button id="btn-save" class="menu-btn">SAVE GAME</button>
+        <button id="btn-load" class="menu-btn">LOAD GAME</button>
         <button id="btn-quit" class="menu-btn">ABORT MISSION</button>
       </div>
 

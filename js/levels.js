@@ -28,38 +28,77 @@ function easyStairs(startX, baseY, steps, stepW = 150, rise = 55, gap = 30, styl
   return out;
 }
 
-const CITY_BG = {
-  skyTop: "#7eb6e8",
-  skyBot: "#d6ebfa",
-  accent: "#e8a020",
+/** Scenery themes: urban | tropical | snow | forest | underground */
+const URBAN_BG = {
+  scenery: "urban",
+  skyTop: "#6aa8e0",
+  skyBot: "#d4eaf8",
+  horizon: "#b8d4e8",
+  accent: "#f0a020",
   secondary: "#4aa8d8",
-  buildings: true,
-  stars: false,
-  daytime: true,
+  sun: true,
   clouds: true,
+  farColor: "#9bb4c8",
+  midColor: "#7a96b0",
 };
 
-const REACTOR_BG = {
-  skyTop: "#8ec9b8",
-  skyBot: "#d8efe6",
-  accent: "#2a9a6a",
-  secondary: "#4aa8d8",
-  buildings: false,
+const TROPICAL_BG = {
+  scenery: "tropical",
+  skyTop: "#4ec4e8",
+  skyBot: "#c8f0e8",
+  horizon: "#7ed4c0",
+  accent: "#ffcc33",
+  secondary: "#2ecc71",
+  sun: true,
+  clouds: true,
+  farColor: "#3a9a6a",
+  midColor: "#2d7a52",
+  water: true,
+};
+
+const SNOW_BG = {
+  scenery: "snow",
+  skyTop: "#c5d8ec",
+  skyBot: "#eef4fa",
+  horizon: "#dce6f0",
+  accent: "#a0c4e8",
+  secondary: "#ffffff",
+  sun: true,
+  clouds: true,
+  farColor: "#b8c8d8",
+  midColor: "#d0dce8",
+  snow: true,
+};
+
+const FOREST_BG = {
+  scenery: "forest",
+  skyTop: "#6eb0d0",
+  skyBot: "#c5e0c8",
+  horizon: "#8fbc8f",
+  accent: "#d4a017",
+  secondary: "#3d8b5f",
+  sun: true,
+  clouds: true,
+  farColor: "#3a6b4a",
+  midColor: "#2d5538",
+  mist: true,
+};
+
+const UNDERGROUND_BG = {
+  scenery: "underground",
+  skyTop: "#1a1428",
+  skyBot: "#2a2038",
+  horizon: "#1e1830",
+  accent: "#39ff9a",
+  secondary: "#7b5cff",
+  sun: false,
+  clouds: false,
   stars: false,
+  farColor: "#15101f",
+  midColor: "#221a32",
+  crystals: true,
   pipes: true,
-  daytime: true,
-  clouds: true,
-};
-
-const DOCK_BG = {
-  skyTop: "#6eb4d6",
-  skyBot: "#c5e4f2",
-  accent: "#e8a020",
-  secondary: "#3d9ec9",
-  buildings: true,
-  stars: false,
-  daytime: true,
-  clouds: true,
+  fog: true,
 };
 
 export const LEVELS = [
@@ -69,29 +108,23 @@ export const LEVELS = [
   {
     id: 1,
     code: "01",
-    name: "ROOKIE STRIP",
-    desc: "Warm-up run. Clear the street patrol and smash the light APC.",
+    name: "NEON AVENUE",
+    desc: "Urban warm-up. Clear the street patrol under glass towers.",
     width: 2800,
     height: 540,
-    theme: "city",
+    theme: "urban",
     playerStart: { x: 80, y: 360 },
     gravity: 1800,
-    bg: CITY_BG,
+    bg: URBAN_BG,
     platforms: [
-      // Almost continuous ground — one easy gap
       solid(0, 480, 900, 80, "street"),
       solid(1000, 480, 1800, 80, "street"),
       lava(900, 520, 100, 40),
-
-      // Optional low ledges (not required)
-      platform(300, 400, 180),
-      platform(700, 400, 160),
-      // Gentle 2-step stair to a pickup ledge
-      ...easyStairs(1400, 400, 2, 160, 50, 40),
+      platform(300, 400, 180, "neon"),
+      platform(700, 400, 160, "neon"),
+      ...easyStairs(1400, 400, 2, 160, 50, 40, "neon"),
       solid(1750, 300, 200, 18, "metal"),
-
-      // Boss arena — open floor + one cover ledge
-      platform(2300, 400, 200),
+      platform(2300, 400, 200, "neon"),
     ],
     enemies: [
       { type: "grunt", x: 450, y: 420 },
@@ -127,19 +160,19 @@ export const LEVELS = [
   {
     id: 2,
     code: "02",
-    name: "DOCKYARD",
-    desc: "Pier guards with rifles. Mind the gaps — stairs are still friendly.",
+    name: "PALM DOCKS",
+    desc: "Tropical pier run. Rifle guards under the palms — watch the gaps.",
     width: 3400,
     height: 540,
-    theme: "city",
+    theme: "tropical",
     playerStart: { x: 80, y: 360 },
     gravity: 1800,
-    bg: DOCK_BG,
+    bg: TROPICAL_BG,
     platforms: [
-      solid(0, 480, 600, 80, "street"),
-      solid(720, 480, 500, 80, "street"),
-      solid(1360, 480, 700, 80, "street"),
-      solid(2200, 480, 1200, 80, "street"),
+      solid(0, 480, 600, 80, "sand"),
+      solid(720, 480, 500, 80, "sand"),
+      solid(1360, 480, 700, 80, "sand"),
+      solid(2200, 480, 1200, 80, "sand"),
 
       lava(600, 520, 120, 40),
       lava(1220, 520, 140, 40),
@@ -149,8 +182,8 @@ export const LEVELS = [
       platform(200, 400, 180),
       platform(900, 400, 200),
       // Gentle climb
-      ...easyStairs(1500, 400, 3, 150, 50, 35),
-      solid(2050, 250, 220, 18, "metal"),
+      ...easyStairs(1500, 400, 3, 150, 50, 35, "wood"),
+      solid(2050, 250, 220, 18, "wood"),
       platform(2400, 400, 180),
       platform(2700, 380, 160),
     ],
@@ -196,20 +229,20 @@ export const LEVELS = [
   {
     id: 3,
     code: "03",
-    name: "NEON SKYLINE",
-    desc: "Rooftop patrols and fixed guns. Use the wide stairs for cover.",
+    name: "FROST SPIRES",
+    desc: "Snowbound rooftops. Snipers and ice ledges — stay frosty.",
     width: 3800,
     height: 540,
-    theme: "city",
+    theme: "snow",
     playerStart: { x: 80, y: 360 },
-    gravity: 1800,
-    bg: CITY_BG,
+    gravity: 1750,
+    bg: SNOW_BG,
     platforms: [
-      solid(0, 480, 500, 80, "street"),
-      solid(640, 480, 450, 80, "street"),
-      solid(1220, 480, 550, 80, "street"),
-      solid(1920, 480, 500, 80, "street"),
-      solid(2560, 480, 1240, 80, "street"),
+      solid(0, 480, 500, 80, "ice"),
+      solid(640, 480, 450, 80, "ice"),
+      solid(1220, 480, 550, 80, "ice"),
+      solid(1920, 480, 500, 80, "ice"),
+      solid(2560, 480, 1240, 80, "ice"),
 
       lava(500, 520, 140, 40),
       lava(1090, 520, 130, 40),
@@ -219,10 +252,10 @@ export const LEVELS = [
 
       platform(150, 400, 160),
       ...easyStairs(700, 400, 3, 155, 52, 30),
-      solid(1250, 250, 180, 18, "metal"),
+      solid(1250, 250, 180, 18, "ice"),
       platform(1550, 400, 180),
       ...easyStairs(2000, 400, 3, 150, 50, 30),
-      solid(2520, 250, 200, 18, "metal"),
+      solid(2520, 250, 200, 18, "ice"),
       platform(2900, 400, 180),
       platform(3200, 380, 160),
     ],
@@ -272,21 +305,21 @@ export const LEVELS = [
   {
     id: 4,
     code: "04",
-    name: "REACTOR APPROACH",
-    desc: "Hot floors and gun nests. Stairs stay wide — pressure does not.",
+    name: "EMERALD CANOPY",
+    desc: "Deep forest combat. Hoppers in the undergrowth, heavies on the trail.",
     width: 4000,
     height: 540,
-    theme: "reactor",
+    theme: "forest",
     playerStart: { x: 80, y: 360 },
     gravity: 1820,
-    bg: REACTOR_BG,
+    bg: FOREST_BG,
     platforms: [
-      solid(0, 480, 450, 80, "metal"),
-      solid(580, 480, 400, 80, "metal"),
-      solid(1120, 480, 480, 80, "metal"),
-      solid(1760, 480, 420, 80, "metal"),
-      solid(2340, 480, 400, 80, "metal"),
-      solid(2900, 480, 1100, 80, "metal"),
+      solid(0, 480, 450, 80, "wood"),
+      solid(580, 480, 400, 80, "wood"),
+      solid(1120, 480, 480, 80, "wood"),
+      solid(1760, 480, 420, 80, "wood"),
+      solid(2340, 480, 400, 80, "wood"),
+      solid(2900, 480, 1100, 80, "wood"),
 
       lava(450, 520, 130, 40),
       lava(980, 520, 140, 40),
@@ -296,15 +329,15 @@ export const LEVELS = [
       spikes(1300, 462, 80),
       spikes(2500, 462, 90),
 
-      platform(120, 400, 160, "tech"),
-      ...easyStairs(620, 400, 3, 150, 52, 28, "tech"),
-      solid(1180, 250, 200, 18, "tech"),
-      platform(1500, 400, 170, "tech"),
-      ...easyStairs(1850, 400, 3, 150, 52, 28, "tech"),
-      solid(2400, 250, 200, 18, "tech"),
-      platform(2650, 400, 160, "tech"),
-      platform(3100, 400, 180, "tech"),
-      platform(3400, 360, 160, "tech"),
+      platform(120, 400, 160, "moss"),
+      ...easyStairs(620, 400, 3, 150, 52, 28, "moss"),
+      solid(1180, 250, 200, 18, "moss"),
+      platform(1500, 400, 170, "moss"),
+      ...easyStairs(1850, 400, 3, 150, 52, 28, "moss"),
+      solid(2400, 250, 200, 18, "moss"),
+      platform(2650, 400, 160, "moss"),
+      platform(3100, 400, 180, "moss"),
+      platform(3400, 360, 160, "moss"),
     ],
     enemies: [
       { type: "rusher", x: 300, y: 420 },
@@ -358,21 +391,21 @@ export const LEVELS = [
   {
     id: 5,
     code: "05",
-    name: "SENTINEL CORE",
-    desc: "End of the line. Overwhelm the defense grid, then the Core.",
+    name: "ABYSS CORE",
+    desc: "Underground reactor labyrinth. Crystals, pipes, and the Sentinel.",
     width: 4200,
     height: 540,
-    theme: "reactor",
+    theme: "underground",
     playerStart: { x: 80, y: 360 },
     gravity: 1850,
-    bg: REACTOR_BG,
+    bg: UNDERGROUND_BG,
     platforms: [
-      solid(0, 480, 400, 80, "metal"),
-      solid(540, 480, 380, 80, "metal"),
-      solid(1060, 480, 420, 80, "metal"),
-      solid(1640, 480, 400, 80, "metal"),
-      solid(2200, 480, 380, 80, "metal"),
-      solid(2740, 480, 1460, 80, "metal"),
+      solid(0, 480, 400, 80, "cave"),
+      solid(540, 480, 380, 80, "cave"),
+      solid(1060, 480, 420, 80, "cave"),
+      solid(1640, 480, 400, 80, "cave"),
+      solid(2200, 480, 380, 80, "cave"),
+      solid(2740, 480, 1460, 80, "cave"),
 
       lava(400, 520, 140, 40),
       lava(920, 520, 140, 40),
@@ -450,6 +483,39 @@ export const LEVELS = [
   },
 ];
 
+const THEME_PLATFORM = {
+  urban: "neon",
+  tropical: "wood",
+  snow: "snow",
+  forest: "moss",
+  underground: "tech",
+};
+
+const THEME_SOLID = {
+  urban: "street",
+  tropical: "sand",
+  snow: "ice",
+  forest: "dirt",
+  underground: "cave",
+};
+
+/** Return a shallow-cloned level with platform styles fitted to scenery theme. */
 export function getLevel(index) {
-  return LEVELS[index] || null;
+  const src = LEVELS[index];
+  if (!src) return null;
+  const theme = src.theme || src.bg?.scenery || "urban";
+  const platDef = THEME_PLATFORM[theme] || "neon";
+  const solidDef = THEME_SOLID[theme] || "street";
+  const platforms = src.platforms.map((p) => {
+    if (p.hazard) return { ...p };
+    let style = p.style || (p.oneWay ? platDef : solidDef);
+    // remap generic urban styles to biome
+    if (style === "neon") style = platDef;
+    if (style === "metal") style = theme === "underground" ? "cave" : solidDef;
+    if (style === "street" && theme !== "urban") style = solidDef;
+    if (style === "tech" && theme === "forest") style = "moss";
+    return { ...p, style };
+  });
+  return { ...src, platforms };
 }
+

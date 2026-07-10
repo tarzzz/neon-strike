@@ -122,28 +122,45 @@ export class ParticleSystem {
 
   muzzle(x, y, dir, weapon = "blaster") {
     const ang = dir > 0 ? 0 : Math.PI;
+    const isRocket = weapon === "bazooka" || weapon === "tankbuster";
     const hot =
-      weapon === "bazooka"
-        ? ["#fff", "#ffe566", "#ff6b1a", "#ff3b5c"]
+      isRocket
+        ? ["#fff", "#ffe566", "#ff6b1a", "#ff3b5c", "#ff2244"]
         : weapon === "spread"
           ? ["#fff", "#39ff9a", "#00f0ff"]
           : weapon === "rapid"
             ? ["#fff", "#ffe566", "#ff9f1a"]
-            : ["#fff", "#ffe566", "#00f0ff", "#ff9f1a"];
+            : weapon === "rail"
+              ? ["#fff", "#e8f7ff", "#7df9ff"]
+              : ["#fff", "#ffe566", "#00f0ff", "#ff9f1a"];
 
     // hot cone flash
     this.emit(x, y, {
-      count: weapon === "bazooka" ? 16 : 10,
+      count: isRocket ? 20 : weapon === "shotgun" ? 14 : 10,
       colors: hot,
-      speed: weapon === "bazooka" ? 260 : 220,
-      life: 0.14,
-      size: weapon === "bazooka" ? 4 : 3,
+      speed: isRocket ? 300 : 220,
+      life: isRocket ? 0.2 : 0.14,
+      size: isRocket ? 4.5 : 3,
       gravity: 0,
       angle: ang,
-      spread: weapon === "spread" ? 1.1 : 0.7,
+      spread: weapon === "spread" || weapon === "shotgun" ? 1.15 : isRocket ? 0.9 : 0.7,
       kind: "streak",
       drag: 0.9,
     });
+    if (isRocket) {
+      this.emit(x, y, {
+        count: 10,
+        colors: ["#555", "#ff6b1a", "#333"],
+        speed: 90,
+        life: 0.4,
+        size: 5,
+        gravity: -40,
+        angle: ang + Math.PI,
+        spread: 1.2,
+        kind: "smoke",
+      });
+      this.flash(x + (dir > 0 ? 16 : -16), y, { r: 70, life: 0.12, color: "rgba(255,120,40,0.55)" });
+    }
     // core sparks
     this.emit(x, y, {
       count: 8,
@@ -292,13 +309,13 @@ export class ParticleSystem {
     this.emit(x, y, {
       count: 1,
       colors: [color, "#fff"],
-      speed: 10,
-      life: 0.12,
+      speed: 12,
+      life: 0.16,
       size,
       gravity: 0,
       kind: "smoke",
-      drag: 0.9,
-      spread: 0.5,
+      drag: 0.88,
+      spread: 0.6,
     });
   }
 

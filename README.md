@@ -48,6 +48,7 @@ python3 -m http.server 8080
 
 - **3 lives**, **5 HP**, regenerating **energy** for special shots  
 - **Controls**: **J** fire forward · **E** fire ↗ · **X** fire ↘ · **K** switch · **C** special
+- **Save / Load**: **F5** save · **F9** load · pause menu · **Continue** on title (localStorage)
 - **Arsenal**: Unlock guns by picking them up; they stay for the whole run with ammo
 - **Switch**: **K** (cycle), `1`–`9`, `Q`/`E`, or scroll
 - **Guns**: Blaster · Rapid · Spread · Shotgun · Laser · Plasma · Bazooka

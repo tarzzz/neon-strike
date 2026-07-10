@@ -391,3 +391,14 @@ html, body {
   .hint { font-size: 0.65rem; }
   #hud { justify-content: flex-start; }
 }
+
+.save-summary, .save-msg {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  min-height: 1.2em;
+}
+.save-msg {
+  color: var(--cyan);
+  margin-bottom: 4px;
+}
