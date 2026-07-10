@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEON STRIKE — Run & Gun</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div id="app">
+    <div id="scanlines"></div>
+    <div id="vignette"></div>
+
+    <header id="top-bar">
+      <div class="brand">NEON <span>STRIKE</span></div>
+      <div id="hud" class="hidden">
+        <div class="hud-block">
+          <span class="label">HP</span>
+          <div id="hp-bar"><div id="hp-fill"></div></div>
+        </div>
+        <div class="hud-block">
+          <span class="label">LIVES</span>
+          <span id="lives">★★★</span>
+        </div>
+        <div class="hud-block">
+          <span class="label">SCORE</span>
+          <span id="score">000000</span>
+        </div>
+        <div class="hud-block">
+          <span class="label">WEAPON</span>
+          <span id="weapon">BLASTER</span>
+        </div>
+        <div class="hud-block">
+          <span class="label">LEVEL</span>
+          <span id="level-name">1</span>
+        </div>
+      </div>
+    </header>
+
+    <main id="stage">
+      <canvas id="game" width="960" height="540"></canvas>
+
+      <!-- Title Screen -->
+      <div id="screen-title" class="screen">
+        <div class="glow-title">NEON STRIKE</div>
+        <p class="tagline">THEY TOOK THE CITY. TAKE IT BACK.</p>
+        <div class="menu">
+          <button id="btn-start" class="menu-btn primary">START MISSION</button>
+          <button id="btn-how" class="menu-btn">HOW TO PLAY</button>
+        </div>
+        <p class="hint">Move WASD · Jump Space · <b>J</b> Fire · <b>K</b> Switch · X Special · <b>F</b> Fullscreen · Pause P</p>
+      </div>
+
+      <!-- How to play -->
+      <div id="screen-how" class="screen hidden">
+        <h2>OPERATIONS MANUAL</h2>
+        <ul class="howto">
+          <li><kbd>←→</kbd> / <kbd>A D</kbd> — Move</li>
+          <li><kbd>↑</kbd> / <kbd>W</kbd> / <kbd>Space</kbd> — Jump (tap again for double jump)</li>
+          <li><kbd>↓</kbd> / <kbd>S</kbd> — Lie prone (under enemy fire). Tap again while prone to drop through platforms</li>
+          <li><kbd>J</kbd> / <kbd>Z</kbd> / <kbd>Mouse</kbd> — Fire</li>
+          <li><kbd>K</kbd> — Switch weapon (also <kbd>Q</kbd>/<kbd>E</kbd>, <kbd>1</kbd>–<kbd>9</kbd>, scroll)</li>
+          <li><kbd>X</kbd> — Special rocket (uses energy)</li>
+          <li>Guns: <span class="pu r">R</span> Rapid · <span class="pu s">S</span> Spread · <span class="pu g">G</span> Shotgun · <span class="pu l">L</span> Laser · <span class="pu p">P</span> Plasma · <span class="pu b">B</span> Bazooka · <span class="pu a">A</span> Railgun · <span class="pu t">T</span> Tank-Buster · <span class="pu h">H</span> HP · <span class="pu e">E</span> Energy</li>
+          <li>★ Heavy guns (Railgun / Tank-Buster) shred bosses, turrets, and armor.</li>
+          <li>Clear each sector, then destroy the boss core.</li>
+        </ul>
+        <button id="btn-how-back" class="menu-btn">BACK</button>
+      </div>
+
+      <!-- Level intro -->
+      <div id="screen-intro" class="screen hidden">
+        <div class="level-badge" id="intro-badge">LEVEL 01</div>
+        <h2 id="intro-title">URBAN OUTSKIRTS</h2>
+        <p id="intro-desc">Night falls on Sector 7. Hostiles hold the rooftops.</p>
+        <p class="press-any">PRESS ANY KEY TO DROP IN</p>
+      </div>
+
+      <!-- Pause -->
+      <div id="screen-pause" class="screen hidden">
+        <h2>PAUSED</h2>
+        <button id="btn-resume" class="menu-btn primary">RESUME</button>
+        <button id="btn-quit" class="menu-btn">ABORT MISSION</button>
+      </div>
+
+      <!-- Death -->
+      <div id="screen-dead" class="screen hidden">
+        <h2 class="danger">DOWNED</h2>
+        <p id="dead-msg">You have lives remaining.</p>
+        <p class="press-any">PRESS ANY KEY TO CONTINUE</p>
+      </div>
+
+      <!-- Game Over -->
+      <div id="screen-over" class="screen hidden">
+        <h2 class="danger">MISSION FAILED</h2>
+        <p id="final-score">SCORE: 0</p>
+        <button id="btn-retry" class="menu-btn primary">RETRY</button>
+        <button id="btn-menu" class="menu-btn">MAIN MENU</button>
+      </div>
+
+      <!-- Level clear -->
+      <div id="screen-clear" class="screen hidden">
+        <h2 class="success">SECTOR CLEARED</h2>
+        <p id="clear-bonus">BONUS +1000</p>
+        <p class="press-any">PRESS ANY KEY</p>
+      </div>
+
+      <!-- Victory -->
+      <div id="screen-win" class="screen hidden">
+        <div class="glow-title small">MISSION COMPLETE</div>
+        <p id="win-score">FINAL SCORE: 0</p>
+        <p class="tagline">The neon city breathes again — for now.</p>
+        <button id="btn-win-menu" class="menu-btn primary">MAIN MENU</button>
+      </div>
+    </main>
+
+    <footer id="footer">
+      <span>Inspired by Contra · Duke Nukem · J fire · K switch</span>
+      <div style="display:flex;gap:12px;align-items:center">
+        <button type="button" id="btn-fullscreen" class="fs-btn">FULLSCREEN</button>
+        <span id="fps"></span>
+      </div>
+    </footer>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
